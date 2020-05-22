@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<script src='http://abubujs.org/libs/Abubu.latest.js'
+	type='text/javascript'></script>
+<html>
+
+<head>
+<title>0_Introduction</title>
+</head>
+
+<body>
+
+<h1>Introduction</h1>
+<p> My first paragraph. </p>
+<a href="https://www.abubujs.org/learning/tutorials/?help=introduction"> Abubu.js Introduction </a>
+
+<p>
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- initiate canvas -->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<canvas  id="canvas_1"
+         width=512 height=512
+         style="border:1px solid #000000;" >
+   <!-- This message is displayed if canvas is not available -->
+   Your browser does not support the HTML5 canvas tag.
+</canvas>
+
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- fragment shader -->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<script id="fshader" type="shader">#version 300 es
+precision highp float ;
+precision highp int ;
+
+out vec4 outcolor ;  // output of shader pixel color
+in vec2 cc ; 				 // input from vertex shader
+
+// create two manipulatable variables
+uniform float radius,theta ;
+
+// define a macro to ease the typing of z^2
+#define csqr(z)     vec2((z).x*(z).x-(z).y*(z).y,2.*(z).x*(z).y)
+
+void main() {
+
+	vec2 z = cc*4. - vec2(2., 2.) ; // initial coordinate for the input pixel
+	vec2 c0 = radius*vec2(cos(theta), sin(theta)) ;  // constant c0 for julia set
+	float iter ;  // use to color the section
+
+	for(int i=0; i<1000; i++){
+		iter = float(i) ;
+
+		/* Julia Map */
+		z = csqr(z) + c0 ;
+
+		if (length(z)>2.){
+			break ;  // if point is not of set, break loop
+		}
+	}
+
+	// if we make it here, then that specific point is part of the set
+	outcolor = vec4(iter - log(log(length(z)))/log(2.), 0., 0., 0.) ;
+	return ;
+}
+</script>
+
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- main sript -->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<script>
+// get the shader source by its ID -------------------------------------------
+function source(id){
+	return document.getElementById(id).text ;
+}
+
+// get the canvas ------------------------------------------------------------
+var canvas_1 = document.getElementById('canvas_1') ;
+
+// create a texture with 512x512 rgb values
+var result_texture = new Abubu.Float32Texture(2048,2048) ;
+
+// create an env to modify the variables
+var env = {
+	r : 0.9,
+	th: Math.PI,
+}
+
+// setup a solver, output is to texture not canvas ---------------------------
+var julia = new Abubu.Solver( {
+	fragmentShader			: source('fshader'),
+
+	// pass uniforms here
+	uniforms : {
+		radius : { type : 'f', value : env.r  } ,
+		theta  : { type : 'f', value : env.th } ,
+	} ,
+
+	// pass targets here
+	targets : {
+		outcolor : { location :0, target : result_texture }
+	}
+}) ;
+
+// create a plotting algorithm -----------------------------------------------
+var plot = new Abubu.Plot2D({
+	target : result_texture ,     // texture to visualize
+	channel : 'r' ,               // channel of interest (r,g,b,a)
+	minValue : 0 ,								// min value on colormap
+	maxValue : 30 ,								// max value on colormap
+	colorbar : true ,							// show the colorbar
+	canvas : canvas_1	,						// the canvas we draw on
+}) ;
+
+plot.init() ; // initialize the plot
+
+// define a function to render and plot the results --------------------------
+function solveAndVisualize(){
+	julia.render() ;
+	plot.render() ;
+}
+
+// create an interactive GUI -------------------------------------------------
+
+function createGui(){
+	var gui = new Abubu.Gui() ;  	//create GUI
+
+	var panel = gui.addPanel() ; 	// add panel to GUI
+
+	panel.add( env, 'r' )
+		.step(0.01)  // the increment to change env.r
+		.onChange(function(){  // this function is run when env.r is changed
+			julia.uniforms.radius.value = env.r ;  // update uniforms from env
+			solveAndVisualize() ;  								 // update graph
+		}) ;
+
+	panel.add( env, 'th' )
+		.step(0.01)	 // the increment to change env.th
+		.onChange(function(){ // this function is run when env.th is changed
+			julia.uniforms.theta.value = env.th ;  // update theta
+			solveAndVisualize() ;									 // update graph
+		}) ;
+}
+
+createGui()
+
+</script>
+
+</p>
+</body>
+</html>
