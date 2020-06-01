@@ -3,6 +3,19 @@
 	type='text/javascript'></script>
 <html>
 
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<body>
+<p>
+	Simulation of 2D FitzHugh-Nagumo model
+
+	$$ \frac {\partial u} {\partial t} = D \Delta^2 u + u(1 - u)(u-a) - v $$
+	$$ \frac {\partial v} {\partial t} = \epsilon (b u - v + \delta) $$
+</p>
+</body>
+
+
 <body>
 <!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
 <!-- initiate canvas -->
@@ -16,6 +29,8 @@
 
 
 </body>
+
+
 
 <!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
 <!-- initialization algorithm-->
@@ -51,16 +66,14 @@ precision highp int ;
 uniform sampler2D		inTrgt ;  // input texture
 uniform float 			dt ;      // delta t; time
 
-/*
-   consider changing macros to GUI elements as an exercise
-*/
+// simulation variables
+uniform float				diffCoef ;   /*  0.001    diffusion coefficient    */
+uniform float				lx       ;   /*  8.0      length of the domain     */
+uniform float				aa       ;   /*  0.1      parameter a              */
+uniform float 			bb       ;   /*  0.3      parameter b              */
+uniform float				epsilon  ;   /*  0.01     epsilon                  */
+uniform float				delta    ;   /*  0.0       delta                   */
 
-#define diffCoef    0.001   /* diffusion coefficient    */
-#define lx          8.0     /* length of the domain     */
-#define aa          0.1     /* parameter a              */
-#define bb          0.3     /* parameter b              */
-#define epsilon     0.01    /* epsilon                  */
-#define delta       0.      /* delta                    */
 
 layout (location = 0 ) out vec4 outTrgt ; // output color of the shader
 
@@ -82,14 +95,14 @@ void main() {
 
 		// manually calculate the laplacian using central difference..................
 
-		/* second order appx
+		//second order appx
 		vec4 laplacian =
 						texture( inTrgt, cc-ii  )
 				+		texture( inTrgt, cc+ii  )
 				+ 	texture( inTrgt, cc+jj  )
 				+ 	texture( inTrgt, cc-jj  )
 				-4.*texture( inTrgt, cc		  ) ;
-		*/
+
 		/*
 		// fourth order appx using finite diff coefficients
 		vec4 laplacian =
@@ -140,7 +153,6 @@ void main() {
 
 <script>
 
-#define dt					0.05    /* dt for numerical calc    */
 
 // get the shader source by its ID ---------------------------------------------
 function source(id){
@@ -160,6 +172,15 @@ env = {
     skip : 1 ,
     running : false ,
     solve : function(){ env.running = !env.running ; } ,
+
+		// simulation variables default values
+		dt 			 :  0.05  ,
+		diffCoef :  0.001 , 	/*  diffusion coefficient    */
+		lx       :  8.0   ,   /*  length of the domain     */
+		aa       :  0.1   ,   /*  parameter a              */
+		bb       :  0.3   ,   /*  parameter b              */
+		epsilon  :  0.01  ,   /*  epsilon                  */
+		delta    :  0.0   ,   /*  delta                   */
 } ;
 
 // specific solver for initializing txt1 and txt2 ..............................
@@ -179,7 +200,15 @@ var tsSolver1 = new Abubu.Solver( {
     fragmentShader : source('tsshader') ,
     uniforms : {
         inTrgt  : { type : 't', value : txt1    } ,
-        dt      : { type : 'f', value : dt    } ,
+
+        dt      	: 	{ type : 'f', value : env.dt  			  } ,
+				diffCoef  : 	{ type : 'f', value : env.diffCoef    } ,
+        lx      	: 	{ type : 'f', value : env.lx    			} ,
+        aa      	: 	{ type : 'f', value : env.aa			    } ,
+        bb      	: 	{ type : 'f', value : env.bb			    } ,
+        epsilon	  : 	{ type : 'f', value : env.epsilon	    } ,
+				delta	    : 	{ type : 'f', value : env.delta	   	  } ,
+
     },
     targets : {
         outTrgt : { location :0, target : txt2  } ,
@@ -191,7 +220,14 @@ var tsSolver2 = new Abubu.Solver( {
     fragmentShader : source('tsshader') ,
     uniforms : {
         inTrgt  : { type : 't', value : txt2    } ,
-        dt      : { type : 'f', value : dt   } ,
+
+        dt      	: 	{ type : 'f', value : env.dt  			  } ,
+				diffCoef  : 	{ type : 'f', value : env.diffCoef    } ,
+        lx      	: 	{ type : 'f', value : env.lx    			} ,
+        aa      	: 	{ type : 'f', value : env.aa			    } ,
+        bb      	: 	{ type : 'f', value : env.bb			    } ,
+        epsilon	  : 	{ type : 'f', value : env.epsilon	    } ,
+				delta	    : 	{ type : 'f', value : env.delta	   	  } ,
     },
     targets : {
         outTrgt : { location :0, target : txt1  } ,
@@ -227,9 +263,54 @@ function createGUI(){
     var gui = new Abubu.Gui() ;
     var pnl = gui.addPanel() ;
 
-    pnl.add( env, 'skip').step(1).min(1) ;
-    pnl.add( env, 'init').name( 'Initialize Solution' ) ;
-    pnl.add( env, 'solve').name('Solve/Pause') ;
+		pnl.add( env, 'init').name( 'Initialize Solution' ) ;
+		pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+
+		var f1 = pnl.addFolder('Simulation Variables')  // create folder 1
+			f1.add( env, 'skip').step(1).min(1) ;
+
+			f1.add( env, 'dt').name( 'Timestep dt:')
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.dt.value = env.dt ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'diffCoef').name( 'Diffusion Coeff:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.diffCoef.value = env.diffCoef ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'lx').name( 'Domain Length:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.lx.value = env.lx ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'aa').name( 'Param a:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.aa.value = env.aa ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'bb').name( 'Param b:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.bb.value = env.bb ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'epsilon').name( 'Param Epsilon:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.epsilon.value = env.epsilon ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
+			f1.add( env, 'delta').name( 'Param Delta:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.delta.value = env.delta ;  // update uniforms from env
+					run() ; // update graph
+				}) ;
+
 }
 
 // execute createGUI .....................................................
@@ -240,5 +321,6 @@ run() ;
 
 
 </script>
+
 
 </html>
