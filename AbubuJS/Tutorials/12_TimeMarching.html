@@ -82,14 +82,14 @@ void main() {
 
 		// manually calculate the laplacian using central difference..................
 
-		/* second order appx
+		// second order appx
 		vec4 laplacian =
 						texture( inTrgt, cc-ii  )
 				+		texture( inTrgt, cc+ii  )
 				+ 	texture( inTrgt, cc+jj  )
 				+ 	texture( inTrgt, cc-jj  )
 				-4.*texture( inTrgt, cc		  ) ;
-		*/
+
 		/*
 		// fourth order appx using finite diff coefficients
 		vec4 laplacian =
@@ -176,7 +176,7 @@ var tsSolver1 = new Abubu.Solver( {
     fragmentShader : source('tsshader') ,
     uniforms : {
         inTrgt  : { type : 't', value : txt1    } ,
-        dt      : { type : 'f', value : 0.005    } ,
+        dt      : { type : 'f', value : 0.065    } ,
     },
     targets : {
         outTrgt : { location :0, target : txt2  } ,
@@ -188,7 +188,7 @@ var tsSolver2 = new Abubu.Solver( {
     fragmentShader : source('tsshader') ,
     uniforms : {
         inTrgt  : { type : 't', value : txt2    } ,
-        dt      : { type : 'f', value : 0.005    } ,
+        dt      : { type : 'f', value : 0.065     } ,
     },
     targets : {
         outTrgt : { location :0, target : txt1  } ,
