@@ -231,6 +231,7 @@ function goldman_potential(){
       }
     }
   }
+
   // we can figure out how many are inside by subtracting the number outside
   var na_in = n/3 - na_out ;
   var k_in  = n/3 - k_out ;
@@ -261,8 +262,7 @@ function goldman_potential(){
   fctx2.fillStyle = "#00ffff" ;
   fctx2.fillText("Calcium Ions (outside/total):  "+ca_out+"/"+n/3, cnvs2.width/2, 340) ;
 
-  fctx2.fillText("test: "+Math.random().toFixed(2), cnvs2.width/2, 500)
-
+  fctx2.fillText("test: "+Math.random().toFixed(2), cnvs2.width/2, 500) ;
 
 }
 
