@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<script src='http://abubujs.org/libs/Abubu.latest.js'
+	type='text/javascript'></script>
+<html>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<head>
+</head>
+
+<body onload='run();'>
+
+<h1> <center> Simulating Membrane Voltage by determining Ionic Concentrations using the Goldman Equation </h1>
+
+<h2>  </h2>
+<div style="text-align:center">
+  <canvas id="c1" width="512" height="512" style="border:1px solid #d3d3d3;">
+  Your browser does not support the HTML5 canvas tag.</canvas>
+  <canvas id="c2" width="400" height="512" style="border:1px solid #d3d3d3;">
+  Your browser does not support the HTML5 canvas tag.</canvas></br>
+  <input type='button' onclick='running=~running;' value='run'>
+</div>
+
+
+<script>
+  var position = {x:0, y:0} ;
+
+  var cnvs = document.getElementById('c1') ;
+  var fctx = cnvs.getContext('2d') ;
+
+  var cnvs2 = document.getElementById('c2') ;
+  var fctx2 = cnvs2.getContext('2d') ;
+
+  var width = cnvs.width ;
+  var height = cnvs.height ;
+
+  var pathCanvas = document.createElement('canvas') ;
+  pathCanvas.width = width ;
+  pathCanvas.height = height;
+
+// establish a new coordinate system for our canvas from [-1,1] on both axes
+  var minX = -1 ;
+  var maxX = 1 ;
+  var minY = -1 ;
+  var maxY = 1 ;
+
+// establish functions that will transform canvas (x,y) -> new coord (x,y)
+  function Px(x){
+      return width*(x-minX)/(maxX-minX) ;
+  }
+  function Py(y){
+      return height*(maxY-y)/(maxY-minY) ;
+  }
+
+  var running = false ; // used to see if simulation is running
+  var n = 90          ; // number of particles
+  var p = []          ; // keep track of particles that have been rendered
+  var maxStep = 0.15  ; // largest possible step per particle
+
+// goldman potential variables
+  var rho_k = 1         ;  // relative membrane permeability
+  var rho_na = 0.05     ;
+  var rho_ca = 0.45     ;
+
+  var RTF_coeff = 26.7  ; // RT/F is appx 26.7 mV
+
+// initialize all of our particles in random locations
+
+function init(){
+    for(var i=0; i<n; i++){
+
+      // create an object named "np", this will be the i-th particle
+      var np = {} ;
+
+      // begin creating each type of ion
+      if (i<n/3){
+
+      // first 1/3 particles will be sodium
+        np.color = "#06f502" ;
+        np.ion = "sodium"
+        np.size  = 2.27 ; // true size is 227 pm
+
+        np.x = Math.random()*(0-minX) + minX ;
+        np.y = Math.random()*(maxY-minY) + minY ;
+        np.permeable = true ;
+
+      }else if(i >= n/3 && i < 2*n/3){
+
+      // second 1/3 particles will be potassium
+        np.color = "#f705ef" ;
+        np.ion = "potassium"
+        np.size  = 2.80 ; // true size of potassium is 280 pm
+
+        np.x = Math.random()*(0-minX) + minX ;
+        np.y = Math.random()*(maxY-minY) + minY ;
+        np.permeable = true ;
+
+      }else{
+
+      // last 1/3 particles will be calcium
+        np.color = "#00ffff" ;
+        np.ion = "calcium"
+        np.size  = 2.27 ; // true size is 227 pm
+
+        np.x = Math.random()*(0-minX) + minX ;
+        np.y = Math.random()*(maxY-minY) + minY ;
+        np.permeable = false ;
+
+      }
+
+      // finalize our values for np and add to p array
+      np.i = i ;
+      p.push(np) ;
+    }
+    draw_particles();
+}
+
+// create a random walk for a specific particle
+
+function walk_particle(np){
+    // first move the particle, then check if new position is valid,
+    // then record its location as "0" for inside, and "1" for outside
+
+    np.x += (Math.random()-0.5)*maxStep ;
+    np.y += (Math.random()-0.5)*maxStep ;
+
+    if (np.permeable){
+    // first check x position validity
+
+      // if np.permeable is true, then the x-bounds of this particle is [-1, 1]
+          if (np.x<minX){   // -1 bound
+              np.x = (minX-np.x)+minX ;
+
+          }
+          if (np.x>maxX){   // +1 bound
+              np.x = maxX-(np.x-maxX) ;
+          }
+      }else{
+      // if np.permeable is false, then the x-bounds of this particle is [-1, 0]
+          if (np.x<0){
+              np.x = -np.x ;
+          }
+          if (np.x>maxX){
+              np.x = maxX-(np.x-maxX) ;
+          }
+      }
+
+    // now update y position, straightforward since y is bound to [-1, 1]
+    if (np.y<minY){
+        np.y = (minY-np.y)+minY ;
+    }
+
+    if (np.y>maxY){
+        np.y = maxY-(np.y-maxY) ;
+    }
+
+    // now we will update each particle's location to be
+    // 0 for inside the membrane, and 1 for outside the membrane
+
+    if (np.x>=minX && np.x<0){ // left side of canvas
+        np.loc = 0  // inside
+    } else if (np.x>=0 && np.x<=maxX) {  // right side of canvas
+        np.loc = 1  // outside
+    } else {
+        np.loc = NaN
+    }
+
+    return np ;
+}
+
+// use canvas drawing functionality to draw all particles
+function draw_particles(){
+  // empty our rectangle
+  fctx.clearRect(0, 0, width, height) ;
+
+  // draw boundary at center x=0, from y=minY to y=maxY
+  fctx.beginPath() ;
+  fctx.moveTo(Px(0), Py(minY)) ;
+  fctx.lineTo(Px(0), Py(maxY)) ;
+  fctx.stroke() ;
+
+  // color the left side of the canvas
+  fctx.fillStyle = "#ea6289"
+  fctx.fillRect(Px(minX), Py(maxY), width/2., height )
+
+  // now draw each particle based on our array p
+  for(var i=0; i<n; i++){
+    fctx.beginPath() ;
+
+    // p[i] is our i-th particle, Px() and Py() transforms its coordinates
+    // particle x position = Px(p[i].x)
+    // particle y position = Py(p[i].y)
+    // define arc to be from 0 rad to 2PI rad
+    // stroke is for the line, fill is for the inside
+    fctx.arc(Px(p[i].x), Py(p[i].y), p[i].size*1.5, 0, Math.PI*2.) ;
+    fctx.fillStyle = p[i].color ;
+    fctx.fill() ;
+    fctx.stroke() ;
+  }
+}
+
+// create function to count particles inside and outside
+
+function goldman_potential(){
+
+  var na_out = 0 ;
+  var k_out = 0 ;
+  var ca_out = 0 ;
+
+  // first check inside and out, then increment "x_out" by 1 if loc = 1
+  for(var i=0; i<n; i++){
+    if(p[i].loc == 1){ // condition if particle is outside
+      switch(p[i].ion) {
+        case "sodium":
+        na_out += 1 ;
+        case "potassium":
+        k_out += 1 ;
+        case "calcium":
+        ca_out += 1 ;
+      }
+
+    }
+    if(p[i].loc == 0){ // condition if particle is outside
+      switch(p[i].ion) {
+        case "sodium":
+        na_out -= 1 ;
+        case "potassium":
+        k_out -= 1 ;
+        case "calcium":
+        ca_out -= 1 ;
+      }
+    }
+  }
+  // we can figure out how many are inside by subtracting the number outside
+  var na_in = n/3 - na_out ;
+  var k_in  = n/3 - k_out ;
+  var ca_in = n/3 - ca_out ;
+
+  numerator = (rho_k*k_out) + (rho_na*na_out) + (rho_ca*ca_in)
+  denominator = (rho_k*k_in) + (rho_na*na_in) + (rho_ca*ca_out)
+
+  v_membrane = RTF_coeff * Math.log(numerator/denominator)
+
+  // now we want to update cnvs2 with our calculated values
+  // canvas height is 512
+
+  fctx2.clearRect(0, 0, cnvs2.width, cnvs2.height) ;
+
+  fctx2.font = "24px Arial";
+  fctx2.textAlign = "center" ;
+
+  fctx2.fillStyle = "black" ;
+  fctx2.fillText("Membrane Voltage:  "+v_membrane.toFixed(2)+"mV", cnvs2.width/2, 200) ;
+
+  fctx2.fillStyle = "#06f502" ;
+  fctx2.fillText("Sodium Ions (outside/total):  "+na_out+"/"+n/3, cnvs2.width/2, 260) ;
+
+  fctx2.fillStyle = "#f705ef" ;
+  fctx2.fillText("Potassium Ions (outside/total):  "+k_out+"/"+n/3, cnvs2.width/2, 300) ;
+
+  fctx2.fillStyle = "#00ffff" ;
+  fctx2.fillText("Calcium Ions (outside/total):  "+ca_out+"/"+n/3, cnvs2.width/2, 340) ;
+
+  fctx2.fillText("test: "+Math.random().toFixed(2), cnvs2.width/2, 500)
+
+
+}
+
+
+// now finally run the program
+function run(){
+  if (running){
+    // walk each particle
+    for(var i=0; i<n; i++){
+      goldman_potential() ;
+      walk_particle(p[i]) ;
+    }
+    // update after every single particle is walked once
+    draw_particles() ;
+
+    // calculate goldman potential and update data
+  }
+  setTimeout(run, 100)
+}
+
+// initialize once everything is done
+init();
+
+</script>
+
+
+<h2> <center> Goldman Equation </h2>
+
+$$ V_{membrane} = \frac {RT} {F} \ \ln \frac
+  {\rho_K [K^+]_{out} + \rho_{Na} [Na^+]_{out} + \rho_{Cl} [Cl^-]_{in}  }
+  {\rho_K [K^+]_{in}  + \rho_{Na} [Na^+]_{in}  + \rho_{CL} [Cl^-]_{out} } $$
+
+$$ V_m = \text{membrane potential in [Volts]} $$
+$$ \rho_{K, Na, Cl} = \text{relative membrane permeability, unitless} $$
+
+$$ R = 8.314 \ J \ K^{-1} \ mol^{-1} \ \ \ \ \text{Universal Gas Constant} $$
+
+$$ T = ~37^{\circ} \ C = 310.15^{\circ} K \ \ \ \ \text{Temperature in Kelvin} $$
+$$ F = 96485 \ C \ mol^{-1} \ \ \ \ \text{Faraday's Constant} $$
+$$ $$
+$$ \text{typically} \ \ \rho_K : \rho_{Na} : \rho_{Cl} = 1 : 0.05 : 0.45 $$
+$$ \text{and} \ \ \frac {RT} {F} \approx 26.7 mV $$
+
+
+</html>

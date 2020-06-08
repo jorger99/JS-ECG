@@ -8,11 +8,21 @@
 
 <body>
 <p>
-	Simulation of 2D FitzHugh-Nagumo model
+	<center> Simulation of 2D FitzHugh-Nagumo model </center>
 
-	$$ \frac {\partial u} {\partial t} = D \Delta^2 u + u(1 - u)(u-a) - v $$
+	$$ \frac {\partial u} {\partial t} = D \nabla^2 u + u(1 - u)(u-a) - v $$
 	$$ \frac {\partial v} {\partial t} = \epsilon (b u - v + \delta) $$
+	<br> <br>
+
+	<center> Modified 2D FitzHugh-Nagumo model </center>
+
+	$$ \frac {\partial u} {\partial t} = D_u \nabla^2 u + u(1 - u)(u-a) - v $$
+	$$ \frac {\partial v} {\partial t} = D_v \nabla^2 v + \epsilon (du(b-u)(u+c) - v) $$
+
+	<center> To reset the simulation parameters, refresh the page </center>
 </p>
+
+
 </body>
 
 
@@ -20,12 +30,15 @@
 <!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
 <!-- initiate canvas -->
 <!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+
+<center>
 <canvas  id="canvas_1"
          width=512 height=512
          style="border:1px solid #000000;" >
    <!-- This message is displayed if canvas is not available -->
    Your browser does not support the HTML5 canvas tag.
 </canvas>
+</center>
 
 
 </body>
@@ -74,6 +87,11 @@ uniform float 			bb       ;   /*  0.3      parameter b              */
 uniform float				epsilon  ;   /*  0.01     epsilon                  */
 uniform float				delta    ;   /*  0.0       delta                   */
 
+uniform float				c			 ;
+uniform float				d			 ;
+
+uniform bool				modified ;
+uniform bool				second_order ;
 
 layout (location = 0 ) out vec4 outTrgt ; // output color of the shader
 
@@ -92,58 +110,75 @@ void main() {
 		// define some unit vectors...................................................
 		vec2 ii = vec2(1. , 0. )/size ; // unit vector in x
 		vec2 jj = vec2(0. , 1. )/size ; // unit vector izn y
+		vec4 laplacian = vec4(0.,0.,0.,0.); // initialize laplacian var
 
 		// manually calculate the laplacian using central difference..................
-
-		//second order appx
-		vec4 laplacian =
+		if (second_order) {  // do second order appx if bool is true
+		laplacian =
 						texture( inTrgt, cc-ii  )
 				+		texture( inTrgt, cc+ii  )
 				+ 	texture( inTrgt, cc+jj  )
 				+ 	texture( inTrgt, cc-jj  )
 				-4.*texture( inTrgt, cc		  ) ;
 
-		/*
-		// fourth order appx using finite diff coefficients
-		vec4 laplacian =
+				laplacian = laplacian/(dx*dx) ;
+
+
+		}	else {  // fourth order appx otherwise
+		laplacian =
 			 (-1./12.) * texture( inTrgt, cc-2.*ii )
 			+(4./3.)   * texture( inTrgt, cc-1.*ii )
 			+(4./3.)   * texture( inTrgt, cc+1.*ii )
 			-(1./12.)  * texture( inTrgt, cc+2.*ii )
 
-			-(10./2.)   * texture( inTrgt, cc )
+			-(10./2.)  * texture( inTrgt, cc )
 
 			-(1./12.)  * texture( inTrgt, cc-2.*jj )
 			+(4./3.)   * texture( inTrgt, cc-1.*jj )
 			+(4./3.)   * texture( inTrgt, cc+1.*jj )
 			-(1./12.)  * texture( inTrgt, cc+2.*jj ) ;
-		*/
-		laplacian = laplacian/(dx*dx) ;
 
-		// extract the values at the center of each pixel.............................
+			laplacian = laplacian/(dx*dx) ;
+
+		}
+
+
+		// extract the values at the center of each pixel...........................
 		vec4	C = texture( inTrgt, cc ) ;
 		float u = C.r ;			// we are choosing u to be the red channel
 		float v = C.g ;			// v to be the green channel
 		float time = C.b ;	// and the solution time to be the blue channel
 
+		float du2dt = 0. ;
+		float dv2dt = 0. ;
+
+		if (modified) {  // if true use modified model
+
+			du2dt = laplacian.r * diffCoef + u*(1.0-u)*(u-aa) - v ;
+			dv2dt = laplacian.g * diffCoef + epsilon*(d * u *(bb-u)*(u+c) - v) ;
+
+		} else {  // otherwise use normal model
 
 		// calculate the time derivatives...........................................
-		float du2dt = laplacian.r * diffCoef + u*(1.0-u)*(u-aa) - v  ;
-		float dv2dt = epsilon * (bb * u - v + delta) ;
+			du2dt = laplacian.r * diffCoef + u*(1.0-u)*(u-aa) - v  ;
+			dv2dt = epsilon * (bb * u - v + delta) ;
 
-		// Euler time integration ............................................
+		}
+
+		// Euler time integration ..................................................
 		u += du2dt*dt ;
 		v += dv2dt*dt ;
 		time += dt ;
 
-		// set our pace to be every 200ms.............................................
+		// set our pace to be every 200ms...........................................
 		if ( (int(time)%200 < 1) && length(cc)<0.1){ u = 1. ;}
 
 
-		// update the output color....................................................
+		// update the output color..................................................
 		outTrgt = vec4(u, v, time, 1.) ;
 		return ;
 }
+
 </script>
 
 
@@ -169,18 +204,26 @@ var txt2 = new Abubu.Float32Texture(512,512) ;
 
 // variables for interactions through GUI ................................
 env = {
-    skip : 1 ,
-    running : false ,
-    solve : function(){ env.running = !env.running ; } ,
+    skip		 : 1 ,
+    running  : false ,
+    solve		 : function(){ env.running = !env.running ; } ,
 
+		//set_default : function(){
 		// simulation variables default values
-		dt 			 :  0.05  ,
+		dt 			 :  0.04  ,
 		diffCoef :  0.001 , 	/*  diffusion coefficient    */
 		lx       :  8.0   ,   /*  length of the domain     */
 		aa       :  0.1   ,   /*  parameter a              */
 		bb       :  0.3   ,   /*  parameter b              */
 		epsilon  :  0.01  ,   /*  epsilon                  */
-		delta    :  0.0   ,   /*  delta                   */
+		delta    :  0.0   ,   /*  delta                    */
+
+		c			 :  0.5   ,   // modified model params
+		d       :  0.5   ,
+
+		modified 		 : false  ,			// if true then use modified model
+		second_order : false  ,			// if true then use second order appx
+
 } ;
 
 // specific solver for initializing txt1 and txt2 ..............................
@@ -209,6 +252,12 @@ var tsSolver1 = new Abubu.Solver( {
         epsilon	  : 	{ type : 'f', value : env.epsilon	    } ,
 				delta	    : 	{ type : 'f', value : env.delta	   	  } ,
 
+				c				:		{ type : 'f', value : env.c					} ,
+				d				:		{ type : 'f', value : env.d					} ,
+
+				modified  :   { type : 'b', value : env.modifed			} ,
+				second_order : {type : 'b', value : env.second_order} ,
+
     },
     targets : {
         outTrgt : { location :0, target : txt2  } ,
@@ -228,6 +277,13 @@ var tsSolver2 = new Abubu.Solver( {
         bb      	: 	{ type : 'f', value : env.bb			    } ,
         epsilon	  : 	{ type : 'f', value : env.epsilon	    } ,
 				delta	    : 	{ type : 'f', value : env.delta	   	  } ,
+
+				c				:		{ type : 'f', value : env.c					} ,
+				d				:		{ type : 'f', value : env.d					} ,
+
+				modified  :   { type : 'b', value : env.modifed			} ,
+				second_order : {type : 'b', value : env.second_order} ,
+
     },
     targets : {
         outTrgt : { location :0, target : txt1  } ,
@@ -265,52 +321,63 @@ function createGUI(){
 
 		pnl.add( env, 'init').name( 'Initialize Solution' ) ;
 		pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+		pnl.add( env, 'modified').name( 'Modified Model?')
+			.onChange(function(){
+				tsSolver1.uniforms.modified.value = env.modified
+			})
+		pnl.add( env, 'second_order').name( '4th order?' )
+			.onChange(function(){
+				tsSolver1.uniforms.second_order.value = env.second_order
+			})
 
 		var f1 = pnl.addFolder('Simulation Variables')  // create folder 1
 			f1.add( env, 'skip').step(1).min(1) ;
 
-			f1.add( env, 'dt').name( 'Timestep dt:')
+			f1.add( env, 'dt').name( 'Timestep dt:').step(0.001)
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.dt.value = env.dt ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'diffCoef').name( 'Diffusion Coeff:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.diffCoef.value = env.diffCoef ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'lx').name( 'Domain Length:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.lx.value = env.lx ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'aa').name( 'Param a:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.aa.value = env.aa ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'bb').name( 'Param b:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.bb.value = env.bb ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'epsilon').name( 'Param Epsilon:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.epsilon.value = env.epsilon ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
 			f1.add( env, 'delta').name( 'Param Delta:' )
 				.onChange(function(){  // this function is run when env var is changed
 					tsSolver1.uniforms.delta.value = env.delta ;  // update uniforms from env
-					run() ; // update graph
 				}) ;
 
+
+			f1.add( env, 'c').name( '(M) Param c:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.c.value = env.c ;  // update uniforms from env
+				}) ;
+
+			f1.add( env, 'd').name( '(M) Param d:' )
+				.onChange(function(){  // this function is run when env var is changed
+					tsSolver1.uniforms.d.value = env.d ;  // update uniforms from env
+				}) ;
 }
 
 // execute createGUI .....................................................
