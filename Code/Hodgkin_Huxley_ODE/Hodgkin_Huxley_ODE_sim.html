@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+
+<script src='http://abubujs.org/libs/Abubu.latest.js'
+	type='text/javascript'></script>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script src='AkPlot.js'></script>
+
+
+<html>
+<center> <h1> Numerical Analysis of Hudgkin-Huxley Model ODE's </h1>
+				 <h2> Focusing on the Rush-Larsen Method </h2>
+</center>
+
+<body> <center>
+  <canvas id="c1" width="512" height="512" style="border:1px solid #000000;">
+  Your browser does not support the HTML5 canvas tag.</canvas><br>
+</center> </body>
+
+
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- initialization algorithm-->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<script id="icshader" type="shader">#version 300 es
+
+
+
+</script>
+
+
+
+
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- time stepping fragment shader -->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+
+<script id="tsshader" type="shader">#version 300 es
+
+
+/*----------------------------------------------------------------------
+ * main body of the shader
+ *----------------------------------------------------------------------
+*/
+
+void main() {
+
+
+}
+
+</script>
+
+
+
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+<!-- main script -->
+<!--&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&-->
+
+<script>
+
+// create function to get ID of object, mainly for shader
+function source(id){
+	return document.getElementById(id).text ;
+}
+
+// get the canvas
+var c1 = document.getElementById('c1') ;
+
+// define two textures as input/output for time stepping
+var txt1 = new Abubu.Float32Texture(512,512) ;
+var txt2 = new Abubu.Float32Texture(512,512) ;
+
+// create env variables to interact with the numerical analysis
+
+env = {
+		skip 				:  1 ,
+		running 		:  false ,
+		solve  			:  function(){ env.running = !env.running ; } ,
+
+		dt 					:  0.04 ,
+} ;
+
+
+// create a solver for initializing txt1 and txt2
+
+var icSolver = new Abubu.Solver({
+		fragmentShader : source('icshader') ,
+		targets : {
+			outTrgt1 : { location : 0 , target : txt1 } ,
+			outTrgt2 : { location : 1 , target : txt2 } ,
+		}
+
+} ) ;
+
+// define and run an initilization function for icSolver
+env.init = function(){icSolver.render() } ;
+env.init() ;
+
+
+
+// odd time steps: get txt1 -> write txt2
+var tsSolver1 = new Abubu.Solver( {
+		fragmentShader 	: source('tsshader') ,
+		uniforms : {
+			// take texture txt1 as input
+			inTrgt 	: {  type : 't', value : txt1 } ,
+
+			// sim variables
+
+			dt 		: 	{ type : 'f', value : env.dt } ,
+		},
+
+		targets : {
+			// take texture txt2 as output
+			outTrgt : { location : 0, target : txt2 } ,
+		}
+} ) ;
+
+// even time steps: get txt2 -> write txt1
+var tsSolver2 = new Abubu.Solver( {
+		fragmentShader 	: source('tsshader') ,
+		uniforms : {
+			// take texture txt1 as input
+			inTrgt 	: {  type : 't', value : txt2 } ,
+
+			// sim variables
+			dt 		: 	{ type : 'f', value : env.dt } ,
+		},
+
+		targets : {
+			// take texture txt1 as output
+			outTrgt : { location : 0, target : txt1 } ,
+		}
+} ) ;
+
+// now visualize solution
+var plt = new Abubu.Plot2D({
+		target 		: txt1 ,
+		channel 	: 'r'  ,
+		minValue 	: 0,
+		maxValue 	: 2,
+		colorbar 	: false ,
+		canvas 		: c1
+
+} ) ;
+
+plt.init() ;
+
+function run(){
+		if(env.running){
+			for(var i=0; i < env.skip; i++){
+					tsSolver1.render() ;
+					tsSolver2.render() ;
+			}
+		}
+		plt.render() ;
+		requestAnimationFrame(run) ;
+}
+
+
+// create user interface
+
+function createGUI(){
+		var gui = new Abubu.Gui() ;
+		var pnl = gui.addPanel() ;
+
+
+		pnl.add( env, 'init' ).name( 'Initialize Solution' ) ;
+		pnl.add( env, 'solve' ).name( 'Solve/Pause' ) ;
+
+		var f1 = pnl.addFolder( 'Simulation Variables' ) ;
+			f1.add( env, 'skip' ).step(1).min(1) ;
+
+			f1.add(  env, 'dt' ).name( 'Timestep dt:').step(0.01)
+				.onChange(function(){
+					tsSolver1.uniforms.dt.value = env.dt ;
+				} ) ;
+}
+
+
+// create GUI then run script
+
+createGUI() ;
+run() ;
+
+</script>
+
+
+
+</html>
