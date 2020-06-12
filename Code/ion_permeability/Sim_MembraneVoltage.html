@@ -2,6 +2,7 @@
 <script src='http://abubujs.org/libs/Abubu.latest.js'
 	type='text/javascript'></script>
 <html>
+<script src='AkPlot.js'></script>
 <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
 <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
@@ -14,22 +15,29 @@
 
 <h2>  </h2>
 <div style="text-align:center">
-  <canvas id="c1" width="512" height="512" style="border:1px solid #d3d3d3;">
+  <canvas id="c1" width="768" height="512" style="border:1px solid #d3d3d3;">
+  Your browser does not support the HTML5 canvas tag.</canvas><br>
+  <center> <input type='button' onclick='running=~running;' value='run'> </center> <br>
+
+  <canvas id="c2" width="768" height="256" style="border:1px solid #d3d3d3;">
   Your browser does not support the HTML5 canvas tag.</canvas>
-  <canvas id="c2" width="400" height="512" style="border:1px solid #d3d3d3;">
-  Your browser does not support the HTML5 canvas tag.</canvas></br>
-  <input type='button' onclick='running=~running;' value='run'>
 </div>
 
 
 <script>
-  var position = {x:0, y:0} ;
 
+/*-------------------------------------------------------------------------
+ * initialize our two canvases an associated variables
+ *-------------------------------------------------------------------------
+ */
+
+// upper canvas for simulation
   var cnvs = document.getElementById('c1') ;
   var fctx = cnvs.getContext('2d') ;
 
+// lower canvas for graph
   var cnvs2 = document.getElementById('c2') ;
-  var fctx2 = cnvs2.getContext('2d') ;
+  var fctx2 = cnvs.getContext('2d') ;
 
   var width = cnvs.width ;
   var height = cnvs.height ;
@@ -38,19 +46,21 @@
   pathCanvas.width = width ;
   pathCanvas.height = height;
 
+
+/*-------------------------------------------------------------------------
+ * initialize our simulation variables
+ *-------------------------------------------------------------------------
+ */
+
 // establish a new coordinate system for our canvas from [-1,1] on both axes
   var minX = -1 ;
   var maxX = 1 ;
   var minY = -1 ;
   var maxY = 1 ;
 
-// establish functions that will transform canvas (x,y) -> new coord (x,y)
-  function Px(x){
-      return width*(x-minX)/(maxX-minX) ;
-  }
-  function Py(y){
-      return height*(maxY-y)/(maxY-minY) ;
-  }
+// reserve the right side of the graph for the data plotting, from [1, 2]
+	var data_minX = 1
+	var data_maxX = 2
 
   var running = false ; // used to see if simulation is running
   var n = 90          ; // number of particles
@@ -61,21 +71,39 @@
   var rho_k = 1         ;  // relative membrane permeability
   var rho_na = 0.05     ;
   var rho_ca = 0.45     ;
-
   var RTF_coeff = 26.7  ; // RT/F is appx 26.7 mV
 
-// initialize all of our particles in random locations
+// establish functions that will transform canvas (x,y) -> new coord (x,y)
+// limit this to the left half, from pixel 0 to 512
+	function Px(x){
+		return 512*(x-minX)/(maxX-minX) ;
+	}
+	function Py(y){
+		return 512*(maxY-y)/(maxY-minY) ;
+	}
 
+// used for plotting
+	var time = 0. ;
+	var pltTime = 0. ;
+	var dt = 0.01 ;
+
+
+/*-------------------------------------------------------------------------
+ * initialize our simulation with a set of particles and draw them
+ *-------------------------------------------------------------------------
+ */
 function init(){
     for(var i=0; i<n; i++){
-
-      // create an object named "np", this will be the i-th particle
+// create an object named "np", this will be the i-th particle
       var np = {} ;
 
-      // begin creating each type of ion
-      if (i<n/3){
+// initialize plt1 on origin coordinates
+			plt1.reset() ;
+			plt1.xlimits= [0,100] ;
 
-      // first 1/3 particles will be sodium
+// begin creating each type of ion
+      if (i<n/3){
+// first 1/3 particles will be sodium
         np.color = "#06f502" ;
         np.ion = "sodium"
         np.size  = 2.27 ; // true size is 227 pm
@@ -85,8 +113,7 @@ function init(){
         np.permeable = true ;
 
       }else if(i >= n/3 && i < 2*n/3){
-
-      // second 1/3 particles will be potassium
+// second 1/3 particles will be potassium
         np.color = "#f705ef" ;
         np.ion = "potassium"
         np.size  = 2.80 ; // true size of potassium is 280 pm
@@ -96,8 +123,7 @@ function init(){
         np.permeable = true ;
 
       }else{
-
-      // last 1/3 particles will be calcium
+// last 1/3 particles will be calcium
         np.color = "#00ffff" ;
         np.ion = "calcium"
         np.size  = 2.27 ; // true size is 227 pm
@@ -108,26 +134,29 @@ function init(){
 
       }
 
-      // finalize our values for np and add to p array
+// finalize our values for np and add to p array
       np.i = i ;
       p.push(np) ;
     }
     draw_particles();
 }
 
-// create a random walk for a specific particle
+
+/*-------------------------------------------------------------------------
+ * function that random walks for a specific particle
+ *-------------------------------------------------------------------------
+ */
 
 function walk_particle(np){
-    // first move the particle, then check if new position is valid,
-    // then record its location as "0" for inside, and "1" for outside
+// first move the particle, then check if new position is valid,
+// then record its location as "0" for inside, and "1" for outside
 
     np.x += (Math.random()-0.5)*maxStep ;
     np.y += (Math.random()-0.5)*maxStep ;
 
     if (np.permeable){
-    // first check x position validity
-
-      // if np.permeable is true, then the x-bounds of this particle is [-1, 1]
+// first check x position validity
+// if np.permeable is true, then the x-bounds of this particle is [-1, 1]
           if (np.x<minX){   // -1 bound
               np.x = (minX-np.x)+minX ;
 
@@ -136,7 +165,7 @@ function walk_particle(np){
               np.x = maxX-(np.x-maxX) ;
           }
       }else{
-      // if np.permeable is false, then the x-bounds of this particle is [-1, 0]
+// if np.permeable is false, then the x-bounds of this particle is [-1, 0]
           if (np.x<0){
               np.x = -np.x ;
           }
@@ -145,7 +174,7 @@ function walk_particle(np){
           }
       }
 
-    // now update y position, straightforward since y is bound to [-1, 1]
+// now update y position, straightforward since y is bound to [-1, 1]
     if (np.y<minY){
         np.y = (minY-np.y)+minY ;
     }
@@ -154,44 +183,59 @@ function walk_particle(np){
         np.y = maxY-(np.y-maxY) ;
     }
 
-    // now we will update each particle's location to be
-    // 0 for inside the membrane, and 1 for outside the membrane
+// now we will update each particle's location to be
+// 0 for inside the membrane, and 1 for outside the membrane
 
-    if (np.x>=minX && np.x<0){ // left side of canvas
+    if (np.x>=minX && np.x<0){ // left side of canvas [-1, 0]
         np.loc = 0  // inside
-    } else if (np.x>=0 && np.x<=maxX) {  // right side of canvas
+    } else if (np.x>=0 && np.x<=maxX) {  // right side of canvas [0, 1]
         np.loc = 1  // outside
-    } else {
-        np.loc = NaN
     }
 
+		time += dt ;     // increment our time variables
+		pltTime += dt ;
     return np ;
 }
 
-// use canvas drawing functionality to draw all particles
-function draw_particles(){
-  // empty our rectangle
-  fctx.clearRect(0, 0, width, height) ;
 
-  // draw boundary at center x=0, from y=minY to y=maxY
+/*-------------------------------------------------------------------------
+ * function that uses canvas drawing functionality to draw all particles
+ *-------------------------------------------------------------------------
+ */
+function draw_particles(){
+
+// empty our canvas
+  fctx.clearRect(0, 0, 512., height) ;
+
+// color the left side of the canvas
+	fctx.fillStyle = "#ea6289"
+	fctx.fillRect(Px(minX), Py(maxY), 256., height )
+
+// draw boundary at center x=0, from y=minY to y=maxY
   fctx.beginPath() ;
   fctx.moveTo(Px(0), Py(minY)) ;
   fctx.lineTo(Px(0), Py(maxY)) ;
   fctx.stroke() ;
 
-  // color the left side of the canvas
-  fctx.fillStyle = "#ea6289"
-  fctx.fillRect(Px(minX), Py(maxY), width/2., height )
+// draw boundary aalong the edges of the box
+  fctx.beginPath() ;
+  fctx.moveTo(Px(1), Py(minY)) ;
+  fctx.lineTo(Px(1), Py(maxY)) ;
+	fctx.lineTo(Px(-1), Py(maxY)) ;
+	fctx.lineTo(Px(-1), Py(minY)) ;
+	fctx.lineTo(Px(1), Py(minY)) ;
 
-  // now draw each particle based on our array p
+  fctx.stroke() ;
+
+// now draw each particle based on our array p
   for(var i=0; i<n; i++){
     fctx.beginPath() ;
 
-    // p[i] is our i-th particle, Px() and Py() transforms its coordinates
-    // particle x position = Px(p[i].x)
-    // particle y position = Py(p[i].y)
-    // define arc to be from 0 rad to 2PI rad
-    // stroke is for the line, fill is for the inside
+// p[i] is our i-th particle, Px() and Py() transforms its coordinates
+// particle x position = Px(p[i].x)
+// particle y position = Py(p[i].y)
+// define arc to be from 0 rad to 2PI rad
+// stroke is for the line, fill is for the inside
     fctx.arc(Px(p[i].x), Py(p[i].y), p[i].size*1.5, 0, Math.PI*2.) ;
     fctx.fillStyle = p[i].color ;
     fctx.fill() ;
@@ -199,86 +243,170 @@ function draw_particles(){
   }
 }
 
-// create function to count particles inside and outside
+
+/*-------------------------------------------------------------------------
+ * create function to count particles inside and outside
+ *-------------------------------------------------------------------------
+ */
 
 function goldman_potential(){
+
+  var cnvs = document.getElementById('c1') ;
+  var fctx = cnvs.getContext('2d') ;
 
   var na_out = 0 ;
   var k_out = 0 ;
   var ca_out = 0 ;
 
-  // first check inside and out, then increment "x_out" by 1 if loc = 1
+	var na_in = 0 ;
+	var k_in = 0 ;
+	var ca_in = 0 ;
+
+// first check inside and out, then increment "x_out" by 1 if loc = 1
   for(var i=0; i<n; i++){
-    if(p[i].loc == 1){ // condition if particle is outside
+    if(p[i].loc == 1){ // 1 if particle is outside (right side)
       switch(p[i].ion) {
         case "sodium":
-        na_out += 1 ;
+	        na_out += 1 ;
+					break ;
         case "potassium":
-        k_out += 1 ;
+	        k_out += 1 ;
+					break ;
         case "calcium":
-        ca_out += 1 ;
+	        ca_out += 1 ;
+					break ;
       }
 
     }
-    if(p[i].loc == 0){ // condition if particle is outside
+    if(p[i].loc == 0){ // 0 if particle is inside (left side)
       switch(p[i].ion) {
         case "sodium":
-        na_out -= 1 ;
+	        na_in += 1 ;
+					break;
         case "potassium":
-        k_out -= 1 ;
+	        k_in += 1 ;
+					break ;
         case "calcium":
-        ca_out -= 1 ;
+	        ca_in += 1 ;
+					break ;
       }
     }
   }
 
-  // we can figure out how many are inside by subtracting the number outside
-  var na_in = n/3 - na_out ;
-  var k_in  = n/3 - k_out ;
-  var ca_in = n/3 - ca_out ;
-
+/*
+	if(na_out==0){na_out+=0.00000000000001} ;
+	if(k_out==0) {na_out+=0.00000000000001} ;
+	if(ca_out==0){na_out+=0.00000000000001} ;
+*/
   numerator = (rho_k*k_out) + (rho_na*na_out) + (rho_ca*ca_in)
   denominator = (rho_k*k_in) + (rho_na*na_in) + (rho_ca*ca_out)
 
   v_membrane = RTF_coeff * Math.log(numerator/denominator)
 
-  // now we want to update cnvs2 with our calculated values
-  // canvas height is 512
+// now we want to update cnvs with our calculated values
+// canvas height is 512
 
-  fctx2.clearRect(0, 0, cnvs2.width, cnvs2.height) ;
+  fctx.clearRect(Px(1), Py(1), cnvs.width/3, cnvs.height) ;
 
-  fctx2.font = "24px Arial";
-  fctx2.textAlign = "center" ;
+  fctx.font = "22px Arial";
 
-  fctx2.fillStyle = "black" ;
-  fctx2.fillText("Membrane Voltage:  "+v_membrane.toFixed(2)+"mV", cnvs2.width/2, 200) ;
+  fctx.fillStyle = "black" ;
+  fctx.fillText("Membrane Voltage: [mV]", Px(1.03), 100) ;
+	fctx.fillText(v_membrane.toFixed(2), Px(1.27), 125) ;
 
-  fctx2.fillStyle = "#06f502" ;
-  fctx2.fillText("Sodium Ions (outside/total):  "+na_out+"/"+n/3, cnvs2.width/2, 260) ;
 
-  fctx2.fillStyle = "#f705ef" ;
-  fctx2.fillText("Potassium Ions (outside/total):  "+k_out+"/"+n/3, cnvs2.width/2, 300) ;
+  fctx.fillStyle = "#06f502" ;
+  fctx.fillText("Sodium Ions (out/total)", Px(1.03), 260) ;
+	fctx.fillText(na_out+"/"+n/3, Px(1.3), 285) ;
 
-  fctx2.fillStyle = "#00ffff" ;
-  fctx2.fillText("Calcium Ions (outside/total):  "+ca_out+"/"+n/3, cnvs2.width/2, 340) ;
 
-  fctx2.fillText("test: "+Math.random().toFixed(2), cnvs2.width/2, 500) ;
+  fctx.fillStyle = "#f705ef" ;
+  fctx.fillText("Potassium Ions (out/total)", Px(1.03), 310) ;
+	fctx.fillText(k_out+"/"+n/3, Px(1.3), 335) ;
+
+  fctx.fillStyle = "#00ffff" ;
+  fctx.fillText("Calcium Ions (out/total)", Px(1.03), 365) ;
+	fctx.fillText(ca_out+"/"+n/3, Px(1.3), 390) ;
+
+//  fctx.fillText("test: "+Math.random().toFixed(2), Px(1.03), 500) ;
 
 }
 
 
-// now finally run the program
+/*-------------------------------------------------------------------------
+ * initialize our plotting canvas
+ *-------------------------------------------------------------------------
+ */
+
+var plt1 = new Plot(cnvs2) ;
+
+plt1.grid = 'on' ;
+
+plt1.xlimits = [0, 30] ;    		// time axis 		[s]
+plt1.ylimits = [-140, 20] ; 		// voltage axis [mV]
+
+// ticks
+plt1.xticks.precision = 0 ;
+plt1.yticks.precision = 1 ;
+
+plt1.xticks.noDivs = 5 ;
+plt1.yticks.noDivs = 8 ;
+
+// setting up legend
+plt1.legend.visible = true ;
+plt1.legend.location = [c2.width-100, 30]
+
+// font settings
+plt1.legend.font = '12pt Times' ;
+plt1.borders = 'on' ;
+plt1.margins.left = 80 ;
+
+plt1.xlabel = 'Time [s]' ;
+plt1.ylabel = 'Voltage [mV]' ;
+
+var vcurve = plt1.addCurveFromPoints() ;
+vcurve.name= 'mV' ;
+
+// begin the PLOT
+plt1.init() ;
+
+
+/*-------------------------------------------------------------------------
+ * this function will graph the current values of V-membrane and
+ * na/k/ca of the current frame
+ *-------------------------------------------------------------------------
+ */
+function graph_potential(){
+// check the pltTime variable, if it reaches the max of 100
+// then redraw the xlimits
+	if(pltTime>100){
+			pltTime-=100 ;
+			plt1.xlimits = [plt1.xlimits[0]+100, plt1.xlimits[1]+100] ;
+			plt1.reset() ;
+	}
+
+// update the voltage curve with a single point
+	vcurve.draw(time, v_membrane)
+
+}
+
+
+/*-------------------------------------------------------------------------
+ * this function will graph the current values of V-membrane and
+ *-------------------------------------------------------------------------
+ */
 function run(){
   if (running){
-    // walk each particle
+// walk each particle
     for(var i=0; i<n; i++){
-      goldman_potential() ;
-      walk_particle(p[i]) ;
+      walk_particle(p[i]) ;  // first walk all the particles
+			goldman_potential() ;  // then update potential calculations
+			graph_potential() ;    //
     }
-    // update after every single particle is walked once
+// update after every single particle is walked once
     draw_particles() ;
 
-    // calculate goldman potential and update data
+// calculate goldman potential and update data
   }
   setTimeout(run, 100)
 }
@@ -288,6 +416,10 @@ init();
 
 </script>
 
+
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+<!-- LaTex equations below our simulation                               -->
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
 
 <h2> <center> Goldman Equation </h2>
 
