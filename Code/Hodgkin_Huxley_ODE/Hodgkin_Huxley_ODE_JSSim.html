@@ -30,5 +30,234 @@
  *-------------------------------------------------------------------------
  */
 
+// sim variables
+var time 			=  0.  		 ;
+var pltTime 	=  0. 		 ;
+var dt 				=  0.0125	 ;
+var v_mem 		=  0.			 ;
+
+// ion conductivities per unit area
+var g_na 			=  120.0 	 ;
+var g_k 			=  36.0  	 ;
+var g_cl 			=  0.3 	   ;
+
+// reversal potentials
+var e_na 			=  55.		 ;
+var e_k 			= -72. 		 ;
+var e_cl 			= -49.4011 ;
+
+// ion currents, used to calculate v_mem every step
+var i_k 			=  0.			 ;
+var i_na 			=  0. 		 ;
+var i_cl 			=  0. 		 ;
+var i_exter 	=  0. 		 ;
+
+
+// initial value of membrane voltage
+//var v_resting = -60.  	;
+
+// variables for Rush-Larsen method, all set to 0 for usage in other functions
+var n = 0. , m = 0. ,	h = 0. ;  		// gating variables
+var an = 0. , am = 0. , ah = 0. ;  // alpha values for gating variables
+var bn = 0. , bm = 0. , bh = 0. ;  // beta values for gating variables
+//var tau_n = 0. , tau_m = 0. , tau_h = 0. ;  // tau values for gating variables
+//var n_inf = 0. , m_inf = 0. , h_inf = 0. ;  // steady state values for n, m, h
+
+
+// store variables in env
+env = {
+	skip 			: 1 ,
+	running 	: true ,
+	solve 		: function(){ env.running = !env.running ; } ,
+} ;
+
+/*-------------------------------------------------------------------------
+ * Hodgkin-Huxley Model functions of membrane voltage
+ * each function represents a variable that updates based on
+ * current voltage and returns its value
+ * ------------------------------------------------------------------------
+ * for gating variables n, m, h, these are the Rush-Larsen method equations
+ *-------------------------------------------------------------------------
+ */
+
+function alpha_n(v){ return 0.01*(10. - v)/(Math.exp(1. - v/10.) - 1.); }
+function beta_n(v) { return 0.125*Math.exp(-v/80.); }
+
+function alpha_m(v){ return 0.1*(25. - v)/(Math.exp(2.5 - v/10.) - 1.); }
+function beta_m(v) { return 4.*Math.exp(-v/18.); }
+
+function alpha_h(v){ return 0.07*Math.exp(-v/20.); }
+function beta_h(v) { return 1./(Math.exp(3. - v/10) + 1 ); }
+
+// to avoid calculating alphas and betas too much,
+// these functions will use the global alpha & beta values
+function tau_n(){ return 1/(an + bn); }
+function tau_m(){	return 1/(am + bm); }
+function tau_h(){	return 1/(ah + bh); }
+
+function n_inf(){	return an / (an + bn); }
+function m_inf(){	return am / (am + bm); }
+function h_inf(){	return ah / (ah + bh); }
+
+
+/*-------------------------------------------------------------------------
+ * define functions for simulation using Rush Larsen Method
+ *-------------------------------------------------------------------------
+ */
+
+function update_alphas_betas(v){
+	// this function will update every alpha and beta to be used
+	// globally in other functions.. this is necessary to avoid
+	// calculating them more than once per step
+
+	// all alphas and betas are functions of the current voltage
+	an = alpha_n(v) ;
+	am = alpha_m(v) ;
+	ah = alpha_h(v) ;
+
+	bn = beta_n(v) ;
+	bm = beta_m(v) ;
+	bh = beta_h(v) ;
+
+} ;
+
+function init_values(v_rest = -60){
+	// calculate initial values of n,m,h using default resting voltage -60mV
+	// update alphas and betas then calculate n, m, h
+	update_alphas_betas(v_rest) ;
+	n = n_inf() ;
+	m = m_inf() ;
+	h = h_inf() ;
+
+} ;
+
+
+function compute_step(){
+	// make sure we only calculate alphas and betas
+	// once using the current value of voltage,  v_mem
+	update_alphas_betas(v_mem)
+
+	/*
+	// update gating variables with RL method	stepping
+	n	= n_inf() + (n - n_inf())*Math.exp(-dt/tau_n())
+	m	= m_inf() + (m - m_inf())*Math.exp(-dt/tau_m())
+	h = h_inf() + (h - h_inf())*Math.exp(-dt/tau_h())
+	*/
+
+	// update gating variables with forward euler method
+	n = n + dt*(an*(1.0 - n) - bn*n )
+	m = m + dt*(am*(1.0 - m) - bm*m )
+	h = h + dt*(ah*(1.0 - h) - bh*h )
+
+	// calculate currents as a function of all our variables
+	i_k 	= (n*n*n*n)*g_k*(v_mem - e_k) ;
+	i_na	= (m*m*m)*h*g_na*(v_mem - e_na) ;
+	i_cl 	= g_cl*(v_mem - e_cl) ;
+
+	// external current is 0 for all t except in
+	// the very beginning to stimulate the AP
+	iexter = 0. ;
+	if(time<20){iexter = -55}
+
+	// calculate our membrane voltage and update our time trackers
+	v_mem = v_mem - dt*(i_k + i_na + i_cl + i_exter) ;
+
+	time 		+= dt ;
+	pltTime += dt ;
+
+} ;
+
+/*-------------------------------------------------------------------------
+ * visuals (plots + GUI)
+ *-------------------------------------------------------------------------
+ */
+
+/*
+ function createGUI(){
+ var gui = new Abubu.Gui() ;
+ var pnl = gui.addPanel() ;
+
+ pnl.add( env, 'init').name( 'Initialize Solution' ) ;
+ pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+
+}
+*/
+
+
+// initialize plot settings then make function to update it
+var plt1 = new Plot(cnvs) ;
+
+plt1.grid = 'on' ;
+
+plt1.xlimits = [0, 1000] ;    		// time axis 		[s]
+plt1.ylimits = [-60, 20] ; 		// voltage axis [mV]
+
+// ticks
+plt1.xticks.precision = 0 ;
+plt1.yticks.precision = 1 ;
+
+plt1.xticks.noDivs = 5 ;
+plt1.yticks.noDivs = 8 ;
+
+// setting up legend
+plt1.legend.visible = true ;
+plt1.legend.location = [c1.width-100, 30]
+
+// font settings
+plt1.legend.font = '12pt Times' ;
+plt1.borders = 'on' ;
+plt1.margins.left = 80 ;
+
+plt1.xlabel = 'Time [s]' ;
+plt1.ylabel = 'Voltage [mV]' ;
+
+/*
+var n_curve = plt1.addCurveFromPoints() ;
+n_curve.name= 'n' ;
+var m_curve = plt1.addCurveFromPoints() ;
+m_curve.name= 'm' ;
+var h_curve = plt1.addCurveFromPoints() ;
+h_curve.name= 'h' ;
+*/
+
+var v_curve = plt1.addCurveFromPoints() ;
+v_curve.name='v_mem' ;
+
+// begin the PLOT
+plt1.init() ;
+
+function plot(){
+	/*
+	n_curve.draw(time, n) ;
+	m_curve.draw(time, m) ;
+	h_curve.draw(time, h) ;
+	*/
+
+	v_curve.draw(time, v_mem)
+
+} ;
+
+
+/*-------------------------------------------------------------------------
+ * run simulation
+ *-------------------------------------------------------------------------
+ */
+
+function run(){
+	 if (env.running){
+		 for(var i=0; i < 30000 ; i++){
+			 compute_step() ;
+			 plot() ;
+			 if(i%30==0){console.log(v_mem)}
+		 }
+	 }
+} ;
+
+init_values() ;
+
+run() ;
+
+
+
 
 </script>
