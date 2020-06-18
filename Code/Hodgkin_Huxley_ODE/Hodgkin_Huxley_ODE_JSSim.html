@@ -10,6 +10,10 @@
 <body> <center>
   <canvas id="c1" width="512" height="512" style="border:1px solid #000000;">
   Your browser does not support the HTML5 canvas tag.</canvas><br>
+	<canvas id="c2" width="512" height="256" style="border:1px solid #000000;">
+	  Your browser does not support the HTML5 canvas tag.</canvas>
+		<canvas id="c3" width="512" height="256" style="border:1px solid #000000;">
+		  Your browser does not support the HTML5 canvas tag.</canvas>
 </center> </body>
 
 <script>
@@ -19,10 +23,12 @@
  *-------------------------------------------------------------------------
  */
   var cnvs = document.getElementById('c1') ;
-  var fctx = cnvs.getContext('2d') ;
+	var cnvs2 = document.getElementById('c2') ;
+	var cnvs3 = document.getElementById('c3') ;
 
   var width = cnvs.width ;
   var height = cnvs.height ;
+
 
 
 /*-------------------------------------------------------------------------
@@ -80,6 +86,15 @@ env = {
  *-------------------------------------------------------------------------
  */
 
+function alpha_n(v) { return 0.01*(v+50.0)/(1.0 - Math.exp(-(v+50.0) / 10.0))}
+function alpha_m(v) { return 0.1*(v+40.0)/(1.0 - Math.exp(-(v+40.0) / 10.0))}
+function alpha_h(v) { return 0.07*Math.exp(-(v+65.0) / 20.0)}
+
+function beta_n(v)  { return 0.125*Math.exp(-(v+65) / 80.0)}
+function beta_m(v)  { return 4.0*Math.exp(-(v+65.0) / 18.0)}
+function beta_h(v)  { return 1.0/(1.0 + Math.exp(-(v+35.0) / 10.0))}
+
+/* old equations
 function alpha_n(v){ return 0.01*(10. - v)/(Math.exp(1. - v/10.) - 1.); }
 function beta_n(v) { return 0.125*Math.exp(-v/80.); }
 
@@ -88,6 +103,7 @@ function beta_m(v) { return 4.*Math.exp(-v/18.); }
 
 function alpha_h(v){ return 0.07*Math.exp(-v/20.); }
 function beta_h(v) { return 1./(Math.exp(3. - v/10) + 1 ); }
+*/
 
 // to avoid calculating alphas and betas too much,
 // these functions will use the global alpha & beta values
@@ -137,17 +153,18 @@ function compute_step(){
 	// once using the current value of voltage,  v_mem
 	update_alphas_betas(v_mem)
 
-	/*
+
 	// update gating variables with RL method	stepping
 	n	= n_inf() + (n - n_inf())*Math.exp(-dt/tau_n())
 	m	= m_inf() + (m - m_inf())*Math.exp(-dt/tau_m())
 	h = h_inf() + (h - h_inf())*Math.exp(-dt/tau_h())
-	*/
 
-	// update gating variables with forward euler method
+
+	/* update gating variables with forward euler method
 	n = n + dt*(an*(1.0 - n) - bn*n )
 	m = m + dt*(am*(1.0 - m) - bm*m )
 	h = h + dt*(ah*(1.0 - h) - bh*h )
+	*/
 
 	// calculate currents as a function of all our variables
 	i_k 	= (n*n*n*n)*g_k*(v_mem - e_k) ;
@@ -183,14 +200,18 @@ function compute_step(){
 }
 */
 
-
+/*-------------------------------------------------------------------------
+ * Plot one: Time vs V_membrane
+ *-------------------------------------------------------------------------
+ */
 // initialize plot settings then make function to update it
 var plt1 = new Plot(cnvs) ;
+var plt_xmax = 30
 
 plt1.grid = 'on' ;
 
-plt1.xlimits = [0, 1000] ;    		// time axis 		[s]
-plt1.ylimits = [-60, 20] ; 		// voltage axis [mV]
+plt1.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+plt1.ylimits = [-80, 60] ; 		// voltage axis [mV]
 
 // ticks
 plt1.xticks.precision = 0 ;
@@ -208,7 +229,7 @@ plt1.legend.font = '12pt Times' ;
 plt1.borders = 'on' ;
 plt1.margins.left = 80 ;
 
-plt1.xlabel = 'Time [s]' ;
+plt1.xlabel = 'Time [???]' ;
 plt1.ylabel = 'Voltage [mV]' ;
 
 /*
@@ -226,14 +247,126 @@ v_curve.name='v_mem' ;
 // begin the PLOT
 plt1.init() ;
 
-function plot(){
-	/*
+/*-------------------------------------------------------------------------
+ * Plot Two: Time vs. Gating Variables
+ *-------------------------------------------------------------------------
+ */
+
+ var plt2 = new Plot(cnvs2) ;
+
+ plt2.grid = 'on' ;
+
+ plt2.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+ plt2.ylimits = [0, 1] ; 		// voltage axis [mV]
+
+ // ticks
+ plt2.xticks.precision = 0 ;
+ plt2.yticks.precision = 1 ;
+
+ plt2.xticks.noDivs = 5 ;
+ plt2.yticks.noDivs = 8 ;
+
+ // setting up legend
+ plt2.legend.visible = true ;
+ plt2.legend.location = [c1.width-100, 30]
+
+ // font settings
+ plt2.legend.font = '12pt Times' ;
+ plt2.borders = 'on' ;
+ plt2.margins.left = 80 ;
+
+ plt2.xlabel = 'Time [???]' ;
+ plt2.ylabel = 'Gating Variable [a.u.]' ;
+
+ var n_curve = plt2.addCurveFromPoints() ;
+ n_curve.name= 'n' ;
+ var m_curve = plt2.addCurveFromPoints() ;
+ m_curve.name= 'm' ;
+ var h_curve = plt2.addCurveFromPoints() ;
+ h_curve.name= 'h' ;
+
+ // begin the PLOT
+ plt2.init() ;
+
+
+ /*-------------------------------------------------------------------------
+  * Plot Three: Time vs. Ionic Currents
+  *-------------------------------------------------------------------------
+  */
+
+var plt3 = new Plot(cnvs3) ;
+
+plt3.grid = 'on' ;
+
+plt3.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+plt3.ylimits = [-.8, .8] ; 		// voltage axis [mV]
+
+// ticks
+plt3.xticks.precision = 0 ;
+plt3.yticks.precision = 1 ;
+
+plt3.xticks.noDivs = 5 ;
+plt3.yticks.noDivs = 8 ;
+
+// setting up legend
+plt3.legend.visible = true ;
+plt3.legend.location = [c1.width-100, 30]
+
+// font settings
+plt3.legend.font = '12pt Times' ;
+plt3.borders = 'on' ;
+plt3.margins.left = 80 ;
+
+plt3.xlabel = 'Time [???]' ;
+plt3.ylabel = 'Voltage [V]' ;
+
+var ik_curve = plt3.addCurveFromPoints() ;
+ik_curve.name= 'i_k' ;
+var ina_curve = plt3.addCurveFromPoints() ;
+ina_curve.name= 'i_na' ;
+var icl_curve = plt3.addCurveFromPoints() ;
+icl_curve.name= 'i_cl' ;
+var iexter_curve = plt3.addCurveFromPoints() ;
+iexter_curve.name= 'i_exter' ;
+
+plt3.init()
+
+function update_plots(){
+	// shift x axis to right as time goes on
+	if(pltTime>plt_xmax){
+			// reset value of pltTime
+			pltTime-=plt_xmax ;
+
+			// shift x axes to the right by pltTime amount and reset
+			plt1.xlimits = [plt1.xlimits[0]+plt_xmax, plt1.xlimits[1]+plt_xmax] ;
+			plt2.xlimits = [plt2.xlimits[0]+plt_xmax, plt2.xlimits[1]+plt_xmax] ;
+			plt3.xlimits = [plt3.xlimits[0]+plt_xmax, plt3.xlimits[1]+plt_xmax] ;
+
+
+			plt1.reset() ;
+			plt2.reset() ;
+			plt3.reset() ;
+	}
+
+	// plot 1
+	v_curve.draw(time, v_mem)
+
+	// plot 2
 	n_curve.draw(time, n) ;
 	m_curve.draw(time, m) ;
 	h_curve.draw(time, h) ;
-	*/
 
-	v_curve.draw(time, v_mem)
+	// plot 3
+	ina_curve.draw(time, i_na/1000) ;
+	ik_curve.draw(time, i_k/1000) ;
+	icl_curve.draw(time, i_cl/1000) ;
+	iexter_curve.draw(time, i_exter/1000) ;
+
+	if(Math.abs(i_na) > 200 || Math.abs(i_k) > 200 || Math.abs(i_cl) > 200){
+		console.log(i_na, i_k, i_cl) ;
+	}
+
+	//console.log(time, v_mem)
 
 } ;
 
@@ -245,12 +378,11 @@ function plot(){
 
 function run(){
 	 if (env.running){
-		 for(var i=0; i < 30000 ; i++){
 			 compute_step() ;
-			 plot() ;
-			 if(i%30==0){console.log(v_mem)}
-		 }
+			 update_plots() ;
+			 // if(pltTime%500==0){console.log(v_mem)}
 	 }
+	 setTimeout(run, 1/1000)  // update every ms
 } ;
 
 init_values() ;
