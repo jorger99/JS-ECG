@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <script src='https://abubujs.org/libs/AkPlot.latest.js'></script>
+<script src='https://abubujs.org/libs/Abubu.latest.js'></script>
 
 <html>
 <center> <h1> Numerical Analysis of Hudgkin-Huxley Model ODE's </h1>
 				 <h2> Focusing on the Rush-Larsen Method in JavaScript </h2>
 </center>
 
-
 <body> <center>
   <canvas id="c1" width="512" height="512" style="border:1px solid #000000;">
   Your browser does not support the HTML5 canvas tag.</canvas><br>
 	<canvas id="c2" width="512" height="256" style="border:1px solid #000000;">
 	  Your browser does not support the HTML5 canvas tag.</canvas>
-		<canvas id="c3" width="512" height="256" style="border:1px solid #000000;">
-		  Your browser does not support the HTML5 canvas tag.</canvas>
+	<canvas id="c3" width="512" height="256" style="border:1px solid #000000;">
+	  Your browser does not support the HTML5 canvas tag.</canvas>
 </center> </body>
 
 <script>
@@ -29,8 +29,6 @@
   var width = cnvs.width ;
   var height = cnvs.height ;
 
-
-
 /*-------------------------------------------------------------------------
  * initialize our simulation variables
  *-------------------------------------------------------------------------
@@ -39,7 +37,7 @@
 // sim variables
 var time 			=  0.  		 ;
 var pltTime 	=  0. 		 ;
-var dt 				=  0.0125	 ;
+var dt 				=  0.025	 ;
 var v_mem 		=  0.			 ;
 
 // ion conductivities per unit area
@@ -68,7 +66,6 @@ var an = 0. , am = 0. , ah = 0. ;  // alpha values for gating variables
 var bn = 0. , bm = 0. , bh = 0. ;  // beta values for gating variables
 //var tau_n = 0. , tau_m = 0. , tau_h = 0. ;  // tau values for gating variables
 //var n_inf = 0. , m_inf = 0. , h_inf = 0. ;  // steady state values for n, m, h
-
 
 // store variables in env
 env = {
@@ -173,12 +170,13 @@ function compute_step(){
 
 	// external current is 0 for all t except in
 	// the very beginning to stimulate the AP
-	iexter = 0. ;
-	if(time<20){iexter = -55}
+	i_exter = 0. ;
+	if(time<0.5){i_exter = -80.}
 
 	// calculate our membrane voltage and update our time trackers
 	v_mem = v_mem - dt*(i_k + i_na + i_cl + i_exter) ;
 
+	// update our time variables
 	time 		+= dt ;
 	pltTime += dt ;
 
@@ -189,7 +187,7 @@ function compute_step(){
  *-------------------------------------------------------------------------
  */
 
-/*
+
  function createGUI(){
  var gui = new Abubu.Gui() ;
  var pnl = gui.addPanel() ;
@@ -198,7 +196,7 @@ function compute_step(){
  pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
 
 }
-*/
+
 
 /*-------------------------------------------------------------------------
  * Plot one: Time vs V_membrane
@@ -218,7 +216,7 @@ plt1.xticks.precision = 0 ;
 plt1.yticks.precision = 1 ;
 
 plt1.xticks.noDivs = 5 ;
-plt1.yticks.noDivs = 8 ;
+plt1.yticks.noDivs = 7 ;
 
 // setting up legend
 plt1.legend.visible = true ;
@@ -264,7 +262,7 @@ plt1.init() ;
  plt2.yticks.precision = 1 ;
 
  plt2.xticks.noDivs = 5 ;
- plt2.yticks.noDivs = 8 ;
+ plt2.yticks.noDivs = 9 ;
 
  // setting up legend
  plt2.legend.visible = true ;
@@ -362,12 +360,6 @@ function update_plots(){
 	icl_curve.draw(time, i_cl/1000) ;
 	iexter_curve.draw(time, i_exter/1000) ;
 
-	if(Math.abs(i_na) > 200 || Math.abs(i_k) > 200 || Math.abs(i_cl) > 200){
-		console.log(i_na, i_k, i_cl) ;
-	}
-
-	//console.log(time, v_mem)
-
 } ;
 
 
@@ -382,7 +374,7 @@ function run(){
 			 update_plots() ;
 			 // if(pltTime%500==0){console.log(v_mem)}
 	 }
-	 setTimeout(run, 1/1000)  // update every ms
+	 setTimeout(run, 10)  // call run() function with delay
 } ;
 
 init_values() ;
