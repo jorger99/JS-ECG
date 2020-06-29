@@ -61,25 +61,16 @@ var i_s 		 	=  0. 		 ;
 var ca        =  0.      ;
 
 // variables for Rush-Larsen method, all set to 0 for usage in other functions\
-var x1 = 0  , m = 0  , h = 0  , j = 0  , d = 0  , f = 0  ;   // gates
-var a_x1 = 0, a_m = 0, a_h = 0, a_j = 0, a_d = 0, a_f = 0;   // alphas
-var b_x1 = 0, b_m = 0, b_h = 0, b_j = 0, b_d = 0, b_f = 0;   // betas
+var x1 = 0  , m = 0  , h = 0  , j = 0  , d = 0  , f = 0   ;   // gates
+var a_x1 = 0, a_m = 0, a_h = 0, a_j = 0, a_d = 0, a_f = 0 ;   // alphas
+var b_x1 = 0, b_m = 0, b_h = 0, b_j = 0, b_d = 0, b_f = 0 ;   // betas
 
-// initial value of membrane voltage
-//var v_resting = -60.  	;
 
 /*-------------------------------------------------------------------------
  * Beeler-Reuter Model functions of membrane voltage
- * each function represents a global variable that updates
- * based on current voltage and returns its value
+ * each gate is a global variable that updates using the
+ * following functions that are based on current voltage
  * ------------------------------------------------------------------------
- */
-
-
-
-/*-------------------------------------------------------------------------
- * define functions for simulation
- *-------------------------------------------------------------------------
  */
 
 function update_alphas_betas(v){
@@ -88,7 +79,6 @@ function update_alphas_betas(v){
 	// calculating them more than once per time step
 
 	// all alphas and betas are functions of the current voltage
-
 
   a_x1 = 0.0005*Math.exp(0.083*(v+50))/(Math.exp(0.057*(v+50))+1.0) ;
   b_x1 = 0.0013*Math.exp(-0.06*(v+20))/(Math.exp(-0.04*(v+20))+1.0) ;
@@ -111,12 +101,14 @@ function update_alphas_betas(v){
 } ;
 
 function init_values(v_rest = -84.5737){
-	// calculate initial values of n,m,h using default resting voltage -60mV
+	// calculate initial values of n,m,h using default resting voltage
 	// update alphas and betas then calculate gating variables
 	update_alphas_betas(v_rest) ;
-  v_mem = v_rest ;
-  ca = 0.0000001 ;
 
+  v_mem = v_rest ;  // initialize voltage as v_rest
+  ca = 0.0000001 ;  // also initialize this
+
+  // calculate the initial value of all the gates using alphas/betas
   x1 = a_x1/(a_x1 + b_x1) ;
   m  = a_m/(a_m + b_m) ;
   h  = a_h/(a_h + b_h) ;
@@ -133,10 +125,10 @@ function compute_step(){
 	update_alphas_betas(v_mem) ;
 
 	// update gating variables with RL method	stepping
-	// use the gate_inf to calculate tau since
-	// gate_inf = a/a+b and tau = 1/a+b
+	// use the []_inf value to calculate tau since
+	// []_inf = a/a+b and tau = 1/a+b
+  // so tau = []_inf/a
 
-  /*
   // rush-larsen timestepping
 	x1_inf = a_x1/(a_x1 + b_x1) ;
 	x1 = x1_inf + (x1 - x1_inf)*Math.exp(-dt/x1_inf*a_x1) ;
@@ -145,19 +137,19 @@ function compute_step(){
 	m	= m_inf + (m - m_inf)*Math.exp(-dt/m_inf*a_m) ;
 
 	h_inf = a_h/(a_h + b_h) ;
-	h = h_inf + (h - h_inf)*Math.exp(-dt/h_inf*a_h)
+	h = h_inf + (h - h_inf)*Math.exp(-dt/h_inf*a_h) ;
 
 	j_inf = a_j/(a_j + b_j) ;
-	j = j_inf + (j - j_inf)*Math.exp(-dt/j_inf*a_j)
+	j = j_inf + (j - j_inf)*Math.exp(-dt/j_inf*a_j) ;
 
 	d_inf = a_d/(a_d + b_d) ;
-	d = d_inf + (d - d_inf)*Math.exp(-dt/d_inf*a_d)
+	d = d_inf + (d - d_inf)*Math.exp(-dt/d_inf*a_d) ;
 
 	f_inf = a_f/(a_f + b_f) ;
-	f = f_inf + (f - f_inf)*Math.exp(-dt/f_inf*a_f)
-  */
+	f = f_inf + (f - f_inf)*Math.exp(-dt/f_inf*a_f) ;
 
 
+  /*
   // forward euler timestepping
   x1 += dt*(a_x1*(1 - x1) - b_x1*x1) ;
   m  += dt*(a_m*(1 - m) - b_m*m) ;
@@ -165,20 +157,9 @@ function compute_step(){
   j  += dt*(a_j*(1 - j) - b_j*j) ;
   d  += dt*(a_d*(1 - d) - b_d*d) ;
   f  += dt*(a_f*(1 - f) - b_f*f) ;
-
-	/* update the currents
-	i_k1 = 0.35*(4.0*(Math.exp(0.04*(v_mem+85))-1.0)/(Math.exp(0.08*(v_mem+53)) + Math.exp(0.04*(v_mem+53)))+0.2*(v_mem+23)/(1.0-Math.exp(-0.04*(v_mem+23)))) ;
-
-	i_x1 	= 0.8*(Math.exp(0.04*(v_mem+77))-1.0)/Math.exp(0.04*(v_mem+35)) * x1 ;
-
-	i_na	= g_na * (m*m*m*h*j+g_nac)*(v_mem - e_na) ;
-
-	ca  	= ca + dt*(-0.0000001 * i_s + 0.07*(0.0000001 - ca)) ;
-	e_s   = -82.3 - 13.0287 * Math.log(ca) ;
-	i_s 	= g_s * (d*f)*(v_mem - e_s) ;
   */
 
-
+	// update the currents, taken from Flavio's Fortran code
   i_k1 = 0.35*(4.0*(Math.exp(0.04*(v_mem+85))-1.0)/(Math.exp(0.08*(v_mem+53)) + Math.exp(0.04*(v_mem+53)))+0.2*(v_mem+23)/(1.0-Math.exp(-0.04*(v_mem+23)))) ;
   e_s  = -82.3 - (13.0287*Math.log(ca)) ;
   i_x1 = 0.8*(Math.exp(0.04*(v_mem+77))-1.0)/Math.exp(0.04*(v_mem+35))*x1 ;
@@ -186,18 +167,15 @@ function compute_step(){
   i_s  = g_s*d*f*(v_mem - e_s) ;
   ca   = ca + dt*(-0.0000001*i_s+0.07*(0.0000001-ca)) ;
 
-
-
 	// external current is 0 for all t except in
 	// the very beginning to stimulate the AP
 	i_exter = 0. ;
 
   // shock every [xxx] ms, where [xxx] is time given by env.shock_time
   if(time<0.5 || Math.round(time)%env.shock_time == 0 ){
-    console.log("applying current: ", time) ;
+    console.log("applying 60mv current: ", time) ;
     i_exter = -60.0 ;
   }
-
 
 	// calculate our membrane voltage and update our time trackers
 	v_mem = v_mem - dt*(i_k1 + i_x1 + i_na + i_s + i_exter) ;
@@ -205,7 +183,6 @@ function compute_step(){
 	// update our time variables
 	time 		+= dt ;
 	pltTime += dt ;
-
 
 } ;
 
@@ -215,13 +192,12 @@ function compute_step(){
  */
 
 
-
-
 /*-------------------------------------------------------------------------
- * Plot zero: Cell Voltage
+ * Plot one: Cell Voltage
  *-------------------------------------------------------------------------
  */
-// initialize plot settings then make function to update it
+
+// initialize plot settings
 var plt1 = new Plot(cnvs1) ;
 var plt_cell_xmax = 30 ;
 
@@ -239,7 +215,7 @@ plt1.yticks.noDivs = 7 ;
 
 // setting up legend
 plt1.legend.visible = true ;
-plt1.legend.location = [c1.width-100, 30]
+plt1.legend.location = [c1.width-100, 30] ;
 
 // font settings
 plt1.legend.font = '12pt Times' ;
@@ -249,16 +225,14 @@ plt1.margins.left = 80 ;
 plt1.xlabel = 'Cell # [position]' ;
 plt1.ylabel = 'Membrane Voltage [mV]' ;
 
-
-
 // begin the PLOT
 plt1.init() ;
 
-
 /*-------------------------------------------------------------------------
- * Plot one: Gates
+ * Plot two: Gates
  *-------------------------------------------------------------------------
  */
+
 // initialize plot settings then make function to update it
 var plt2 = new Plot(cnvs2) ;
 var plt_xmax = 1200 ;
@@ -277,7 +251,7 @@ plt2.yticks.noDivs = 7 ;
 
 // setting up legend
 plt2.legend.visible = true ;
-plt2.legend.location = [c1.width-100, 30]
+plt2.legend.location = [c1.width-100, 30] ;
 
 // font settings
 plt2.legend.font = '12pt Times' ;
@@ -304,7 +278,7 @@ f_curve.name='f' ;
 plt2.init() ;
 
 /*-------------------------------------------------------------------------
- * Plot Two: Time vs. Gating Variables
+ * Plot Three: Time vs. Gating Variables
  *-------------------------------------------------------------------------
  */
 
@@ -324,7 +298,7 @@ plt2.init() ;
 
  // setting up legend
  plt3.legend.visible = true ;
- plt3.legend.location = [c1.width-100, 30]
+ plt3.legend.location = [c1.width-100, 30] ;
 
  // font settings
  plt3.legend.font = '12pt Times' ;
@@ -340,10 +314,8 @@ plt2.init() ;
  // begin the PLOT
  plt3.init() ;
 
-
-
  /*-------------------------------------------------------------------------
-  * Plot Three: Time vs. Ionic Currents
+  * Plot Four: Time vs. Ionic Currents
   *-------------------------------------------------------------------------
   */
 
@@ -363,7 +335,7 @@ plt4.yticks.noDivs = 8 ;
 
 // setting up legend
 plt4.legend.visible = true ;
-plt4.legend.location = [c1.width-100, 30]
+plt4.legend.location = [c1.width-100, 30] ;
 
 // font settings
 plt4.legend.font = '12pt Times' ;
@@ -386,8 +358,14 @@ iexter_curve.name= 'i_exter' ;
 
 plt4.init()
 
+/*-------------------------------------------------------------------------
+ * Create function to update all plots
+ *-------------------------------------------------------------------------
+ */
+
 function update_plots(){
-	// shift x axis to right as time goes on
+
+	// shift x axis to right as time goes on, only plots 2-4
 	if(pltTime>plt_xmax){
 			// reset value of pltTime
 			pltTime-=plt_xmax ;
@@ -448,33 +426,33 @@ function create_gui(){
 
   pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
   // pnl.add( env, 'init').name( 'Reinitialize' ) ;
-  pnl.add( env, 'skip_frames').step(1).min(1);
-  pnl.add( env, 'shock_time').step(20).min(10);
+  pnl.add( env, 'skip_frames').step(1).min(1) ;
+  pnl.add( env, 'shock_time').step(20).min(10) ;
 
 
 } ;
 
 
 function run(){
-	 if(env.running){
-     for(var i=0; i < env.skip_frames; i++){
-			 compute_step() ;
-     }
-	 }
-   console.log("currents", i_k1, i_x1, i_na, i_s, ca)
-   console.log("gates", x1, m, h, j, d, f)
-   console.log("vmem", v_mem)
-   update_plots() ;
+	if(env.running){
+    for(var i=0; i < env.skip_frames; i++){
+	    compute_step() ;
+    }
+	}
+  console.log("currents", i_k1, i_x1, i_na, i_s, ca) ;
+  console.log("gates", x1, m, h, j, d, f) ;
+  console.log("vmem", v_mem) ;
+  update_plots() ;
 
-   if(!isNaN(v_mem)){
-   	 setTimeout(run, 0)  // call run() function if it hasnt blown up
-   }
-
+  // function will call itself if it hasnt blown up
+  if(!isNaN(v_mem)){
+   	 setTimeout(run, 0) ;
+  }
 } ;
 
-create_gui();
-init_values();
-run();
+create_gui() ;
+init_values() ;
+run() ;
 
 
 
