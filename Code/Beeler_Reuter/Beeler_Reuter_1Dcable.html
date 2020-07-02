@@ -22,6 +22,7 @@
  * initialize our canvas and its useful variables
  *-------------------------------------------------------------------------
  */
+
   var cnvs1 = document.getElementById('c0') ;
   var cnvs2 = document.getElementById('c1') ;
 	var cnvs3 = document.getElementById('c2') ;
@@ -35,14 +36,24 @@
  *-------------------------------------------------------------------------
  */
 
-// sim variables
-var time 			=  0.  		 ;
-var pltTime 	=  0. 		 ;
-var dt 				=  0.01	   ;
-var v_mem 		=  0.			 ;
+'use strict';
 
-// laplacian
-var dx 				=  0.025   ;
+// sim variables
+var time 			=  0.  		 ;    // time variable
+var pltTime 	=  0. 		 ;    // plotting time variable
+var dt 				=  0.01	   ;    // time differential
+var v_rest    = -84.5737 ;    // resting voltage for all cells
+
+// tissue variables
+var shock_cell_num = 5   ;    // the first n cells to be given current
+var interest_cell = 3    ;    // cell we monitor in plots 2-4
+var tissue_x_pos = 0     ;    // used to calc position of cell N (N*dx)
+
+// 1-D space integration variables (i.e. cells on a cable w/ fixed length)
+var num_cells =  500     ;    // number of cells on cable
+var dx 				=  0.025   ;    // width of cell
+var Dlap      =  0.001   ;    // diffusion coefficient
+var array_blowup = false ;    // bool to see if array has blown up
 
 // ion conductivities per unit area
 var g_na 			=  4.0	   ;
@@ -58,12 +69,20 @@ var i_k1 			=  0.			 ;
 var i_x1 			=  0. 		 ;
 var i_na 			=  0. 		 ;
 var i_s 		 	=  0. 		 ;
-var ca        =  0.      ;
 
-// variables for Rush-Larsen method, all set to 0 for usage in other functions\
-var x1 = 0  , m = 0  , h = 0  , j = 0  , d = 0  , f = 0   ;   // gates
-var a_x1 = 0, a_m = 0, a_h = 0, a_j = 0, a_d = 0, a_f = 0 ;   // alphas
-var b_x1 = 0, b_m = 0, b_h = 0, b_j = 0, b_d = 0, b_f = 0 ;   // betas
+// empty arrays to hold voltages and gating variables per cell filled with 0s
+var v_cells = new Float64Array(num_cells) ;
+var x1 = new Float64Array(num_cells) ;
+var h  = new Float64Array(num_cells) ;
+var m  = new Float64Array(num_cells) ;
+var j  = new Float64Array(num_cells) ;
+var d  = new Float64Array(num_cells) ;
+var f  = new Float64Array(num_cells) ;
+var ca  = new Float64Array(num_cells) ;
+
+// Beeler-Reuter model variable, alphas & betas, set to 0 to be calc'd later
+var a_x1 = 0, a_m = 0, a_h = 0, a_j = 0, a_d = 0, a_f = 0;   // alphas
+var b_x1 = 0, b_m = 0, b_h = 0, b_j = 0, b_d = 0, b_f = 0;   // betas
 
 
 /*-------------------------------------------------------------------------
@@ -100,89 +119,96 @@ function update_alphas_betas(v){
 
 } ;
 
-function init_values(v_rest = -84.5737){
-	// calculate initial values of n,m,h using default resting voltage
-	// update alphas and betas then calculate gating variables
-	update_alphas_betas(v_rest) ;
+function init_values(init_v = v_rest){
+	// calculate initial values of gates using default resting voltage
+  update_alphas_betas(init_v) ;
 
-  v_mem = v_rest ;  // initialize voltage as v_rest
-  ca = 0.0000001 ;  // also initialize this
+  // set all cells to resting voltage and update their gates accordingly
+  for(var i=0; i < num_cells; i++){
+    // voltages
+    v_cells[i] = init_v ;
 
-  // calculate the initial value of all the gates using alphas/betas
-  x1 = a_x1/(a_x1 + b_x1) ;
-  m  = a_m/(a_m + b_m) ;
-  h  = a_h/(a_h + b_h) ;
-  j  = a_j/(a_j + b_j) ;
-  d  = a_d/(a_d + b_d) ;
-  f  = a_f/(a_f + b_f) ;
+    // gates
+    x1[i] = a_x1/(a_x1 + b_x1) ;
+    m[i]  = a_m/(a_m + b_m) ;
+    h[i]  = a_h/(a_h + b_h) ;
+    j[i]  = a_j/(a_j + b_j) ;
+    d[i]  = a_d/(a_d + b_d) ;
+    f[i]  = a_f/(a_f + b_f) ;
+
+    ca[i] = 0.0000001 ;
+  }
+
 
 } ;
 
 
-function compute_step(){
+function update_single_cell(i){
 	// make sure we only calculate alphas and betas
-	// once using the current value of voltage,  v_mem
-	update_alphas_betas(v_mem) ;
-
-	// update gating variables with RL method	stepping
-	// use the []_inf value to calculate tau since
-	// []_inf = a/a+b and tau = 1/a+b
-  // so tau = []_inf/a
+	// once using the current value of voltage of cell i,  v_cells[i]
+	update_alphas_betas(v_cells[i]) ;
 
   // rush-larsen timestepping
-	x1_inf = a_x1/(a_x1 + b_x1) ;
-	x1 = x1_inf + (x1 - x1_inf)*Math.exp(-dt/x1_inf*a_x1) ;
+  // update gating variables with RL method	stepping
+  // use the [gate]_inf value to calculate tau since
+  // [gate]_inf = a/a+b and tau = 1/a+b
+  // so tau = [gate]_inf/a
+
+  x1_inf = a_x1/(a_x1 + b_x1) ;
+	x1[i] = x1_inf + (x1[i] - x1_inf)*Math.exp(-dt/x1_inf*a_x1) ;
 
 	m_inf = a_m/(a_m + b_m) ;
-	m	= m_inf + (m - m_inf)*Math.exp(-dt/m_inf*a_m) ;
+	m[i]	= m_inf + (m[i] - m_inf)*Math.exp(-dt/m_inf*a_m) ;
 
 	h_inf = a_h/(a_h + b_h) ;
-	h = h_inf + (h - h_inf)*Math.exp(-dt/h_inf*a_h) ;
+	h[i] = h_inf + (h[i] - h_inf)*Math.exp(-dt/h_inf*a_h) ;
 
 	j_inf = a_j/(a_j + b_j) ;
-	j = j_inf + (j - j_inf)*Math.exp(-dt/j_inf*a_j) ;
+	j[i] = j_inf + (j[i] - j_inf)*Math.exp(-dt/j_inf*a_j) ;
 
 	d_inf = a_d/(a_d + b_d) ;
-	d = d_inf + (d - d_inf)*Math.exp(-dt/d_inf*a_d) ;
+	d[i] = d_inf + (d[i] - d_inf)*Math.exp(-dt/d_inf*a_d) ;
 
 	f_inf = a_f/(a_f + b_f) ;
-	f = f_inf + (f - f_inf)*Math.exp(-dt/f_inf*a_f) ;
+	f[i] = f_inf + (f[i] - f_inf)*Math.exp(-dt/f_inf*a_f) ;
 
 
+  // forward euler timestepping, less efficient on CPU
   /*
-  // forward euler timestepping
-  x1 += dt*(a_x1*(1 - x1) - b_x1*x1) ;
-  m  += dt*(a_m*(1 - m) - b_m*m) ;
-  h  += dt*(a_h*(1 - h) - b_h*h) ;
-  j  += dt*(a_j*(1 - j) - b_j*j) ;
-  d  += dt*(a_d*(1 - d) - b_d*d) ;
-  f  += dt*(a_f*(1 - f) - b_f*f) ;
+  x1[i] += dt*(a_x1*(1 - x1[i]) - b_x1*x1[i]) ;
+  m[i]  += dt*(a_m*(1 - m[i]) - b_m*m[i]) ;
+  h[i]  += dt*(a_h*(1 - h[i]) - b_h*h[i]) ;
+  j[i]  += dt*(a_j*(1 - j[i]) - b_j*j[i]) ;
+  d[i]  += dt*(a_d*(1 - d[i]) - b_d*d[i]) ;
+  f[i]  += dt*(a_f*(1 - f[i]) - b_f*f[i]) ;
   */
 
-	// update the currents, taken from Flavio's Fortran code
-  i_k1 = 0.35*(4.0*(Math.exp(0.04*(v_mem+85))-1.0)/(Math.exp(0.08*(v_mem+53)) + Math.exp(0.04*(v_mem+53)))+0.2*(v_mem+23)/(1.0-Math.exp(-0.04*(v_mem+23)))) ;
-  e_s  = -82.3 - (13.0287*Math.log(ca)) ;
-  i_x1 = 0.8*(Math.exp(0.04*(v_mem+77))-1.0)/Math.exp(0.04*(v_mem+35))*x1 ;
-  i_na = (g_na*m*m*m*h*j+g_nac)*(v_mem - e_na) ;
-  i_s  = g_s*d*f*(v_mem - e_s) ;
-  ca   = ca + dt*(-0.0000001*i_s+0.07*(0.0000001-ca)) ;
+	// update the currents using beeler-reuter model
+  // these equations will not throw divide-by-zero errors,
+  // they are cont. and diff'able on the domain of the working voltages
+  i_k1  = 0.35*(4.0*(Math.exp(0.04*(v_cells[i]+85))-1.0)/(Math.exp(0.08*(v_cells[i]+53)) + Math.exp(0.04*(v_cells[i]+53))) + 0.2*(v_cells[i]+23)/(1.0-Math.exp(-0.04*(v_cells[i]+23)))) ;
 
-	// external current is 0 for all t except in
-	// the very beginning to stimulate the AP
-	i_exter = 0. ;
+  i_x1  = 0.8*(Math.exp(0.04*(v_cells[i]+77))-1.0 )/Math.exp(0.04*(v_cells[i]+35))*x1[i] ;
 
-  // shock every [xxx] ms, where [xxx] is time given by env.shock_time
-  if(time<0.5 || Math.round(time)%env.shock_time == 0 ){
-    console.log("applying 60mv current: ", time) ;
+  i_na  = (g_na*m[i]*m[i]*m[i]*h[i]*j[i]+g_nac)*(v_cells[i] - e_na) ;
+
+  ca[i] = ca[i] + dt*(-0.0000001*i_s+0.07*(0.0000001-ca[i])) ;
+  e_s   = -82.3 - (13.0287*Math.log(ca[i])) ;
+  i_s   = g_s*d[i]*f[i]*(v_cells[i] - e_s) ;
+
+	// external current is applied in order to stimulate action potentials
+	// we only want to apply current to the first 5 cells of the tissue
+  // and we only want to shock in the beginning, and every [xxx] ms
+  // [xxx] is given by env.shock_time
+  i_exter = 0. ;
+  if((time<0.5 || Math.round(time)%env.shock_time == 0) && i <= shock_cell_num){
+    console.log("applying 60mv current: ", time, i) ;
     i_exter = -60.0 ;
   }
 
-	// calculate our membrane voltage and update our time trackers
-	v_mem = v_mem - dt*(i_k1 + i_x1 + i_na + i_s + i_exter) ;
-
-	// update our time variables
-	time 		+= dt ;
-	pltTime += dt ;
+	// finally calculate our membrane voltage and
+  // save it in our global voltages for cell i
+	v_cells[i] = v_cells[i] - dt*(i_k1 + i_x1 + i_na + i_s + i_exter);
 
 } ;
 
@@ -191,7 +217,6 @@ function compute_step(){
  *-------------------------------------------------------------------------
  */
 
-
 /*-------------------------------------------------------------------------
  * Plot one: Cell Voltage
  *-------------------------------------------------------------------------
@@ -199,12 +224,12 @@ function compute_step(){
 
 // initialize plot settings
 var plt1 = new Plot(cnvs1) ;
-var plt_cell_xmax = 30 ;
+var plt_cell_xmax = num_cells*dx ;
 
 plt1.grid = 'on' ;
 
-plt1.xlimits = [0, plt_cell_xmax] ;    		// time axis 		[s]
-plt1.ylimits = [-1, 1] ; 		// voltage axis [mV]
+plt1.xlimits = [0, plt_cell_xmax] ;   // length axis 		[m]
+plt1.ylimits = [-100, 30] ; 		// voltage axis [mV]
 
 // ticks
 plt1.xticks.precision = 0 ;
@@ -213,17 +238,15 @@ plt1.yticks.precision = 1 ;
 plt1.xticks.noDivs = 5 ;
 plt1.yticks.noDivs = 7 ;
 
-// setting up legend
-plt1.legend.visible = true ;
-plt1.legend.location = [c1.width-100, 30] ;
-
 // font settings
 plt1.legend.font = '12pt Times' ;
 plt1.borders = 'on' ;
 plt1.margins.left = 80 ;
 
-plt1.xlabel = 'Cell # [position]' ;
+plt1.xlabel = 'Tissue Position [microns]' ;
 plt1.ylabel = 'Membrane Voltage [mV]' ;
+
+var v_cells_curve = plt1.addCurveFromArrays() ;
 
 // begin the PLOT
 plt1.init() ;
@@ -353,8 +376,6 @@ var ina_curve = plt4.addCurveFromPoints() ;
 ina_curve.name= 'i_na' ;
 var is_curve = plt4.addCurveFromPoints() ;
 is_curve.name= 'i_s' ;
-var iexter_curve = plt4.addCurveFromPoints() ;
-iexter_curve.name= 'i_exter' ;
 
 plt4.init()
 
@@ -363,7 +384,7 @@ plt4.init()
  *-------------------------------------------------------------------------
  */
 
-function update_plots(){
+function update_plots(k){
 
 	// shift x axis to right as time goes on, only plots 2-4
 	if(pltTime>plt_xmax){
@@ -381,25 +402,29 @@ function update_plots(){
 			plt4.reset() ;
 	}
 
+  // cell 5 is 5*dx from the origin, dx is length of each cell
+  // multiply every element of the array (0,1,2,3....N) by dx
+  tissue_x_pos = [...v_cells.keys()].map(function(x) {return x*dx}) ;
+
   // plot 1  (cell voltage)
+  v_cells_curve.draw(tissue_x_pos, v_cells) ;
 
   // plot 2  (gates)
-  x1_curve.draw(time, x1) ;
-  m_curve.draw(time, m) ;
-  h_curve.draw(time, h) ;
-  j_curve.draw(time, j) ;
-  d_curve.draw(time, d) ;
-  f_curve.draw(time, f) ;
+  x1_curve.draw(time, x1[interest_cell]) ;
+  m_curve.draw(time, m[interest_cell]) ;
+  h_curve.draw(time, h[interest_cell]) ;
+  j_curve.draw(time, j[interest_cell]) ;
+  d_curve.draw(time, d[interest_cell]) ;
+  f_curve.draw(time, f[interest_cell]) ;
 
 	// plot 3  (membrane voltage)
-	v_curve.draw(time, v_mem)
+	v_curve.draw(time, v_cells[interest_cell])
 
 	// plot 4  (currents)
 	ik1_curve.draw(time, i_k1) ;
 	ix1_curve.draw(time, i_x1) ;
 	ina_curve.draw(time, i_na) ;
 	is_curve.draw(time, i_s) ;
-	iexter_curve.draw(time, i_exter) ;
 
 } ;
 
@@ -411,12 +436,11 @@ function update_plots(){
 
  // store variables in env
 env = {
- 	skip_frames  : 30 ,
- 	running 	   : true ,
+  running 	   : false ,
+ 	skip_frames  : 1 ,
+  shock_time   : 400 ,
  	solve     	 : function(){ env.running = !env.running ; } ,
   init         : function(){ init_values() ;} ,
-
-  shock_time   : 400 ,
 } ;
 
 
@@ -425,36 +449,62 @@ function create_gui(){
   var pnl = gui.addPanel() ;
 
   pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
-  // pnl.add( env, 'init').name( 'Reinitialize' ) ;
   pnl.add( env, 'skip_frames').step(1).min(1) ;
   pnl.add( env, 'shock_time').step(20).min(10) ;
-
-
 } ;
 
 
 function run(){
 	if(env.running){
+    // first loop will run X times before drawing plots to speed up animation
     for(var i=0; i < env.skip_frames; i++){
-	    compute_step() ;
+//~~~~~~~~~~~~~~~~~ calculate voltage for every cell on cable
+      for(var k=0; k < num_cells; k++){
+        // calculate voltages using normal BR model for k-th cell on cable
+        update_single_cell(k);
+      }
+
+//~~~~~~~~~~~~~~~~~ calculate laplacians and update cell voltages
+      for(var k=0; k < num_cells; k++){
+
+        // laplacian does not work on first and last cell, since k-1/k+1 DNE
+        // for k=0, set k=-1 equal to k=1, and for k=N, N+1 equal to N-1
+
+        if(k==0){  // k = 0 laplacian
+          xlap = 2*(v_cells[k+1]-v_cells[k])
+        } else if(k==num_cells-1) { // k = N laplacian
+          xlap = 2*(v_cells[k-1]-v_cells[k])
+        } else { // every other laplacian between 0 and N is normal
+          xlap = v_cells[k+1] + v_cells[k-1] - 2.*v_cells[k] ;
+        }
+
+        // finally update each cell's voltage according to its neighboring lap
+        v_cells[k] += dt*xlap*Dlap/(dx*dx) ;
+      } // end laplacian loop over every cell
+
+      // update time at the end of every tissue simulation and update the plots
+      time 		+= dt ;
+      pltTime += dt ;
+      update_plots(interest_cell) ;
+    } // end for loop between skipframes
+  }
+
+  // check all values inside v_cells for NaN's
+  for(var i=0; i < v_cells.length; i++){
+    if(isNaN(v_cells[i])){
+      array_blowup = true ;
+      console.log(i,"-th cell is NaN") ;
     }
-	}
-  console.log("currents", i_k1, i_x1, i_na, i_s, ca) ;
-  console.log("gates", x1, m, h, j, d, f) ;
-  console.log("vmem", v_mem) ;
-  update_plots() ;
+  }
 
   // function will call itself if it hasnt blown up
-  if(!isNaN(v_mem)){
-   	 setTimeout(run, 0) ;
+  if(array_blowup == false){
+    setTimeout(run, 0) ;  // repeat run function as long as array is not NaN
   }
 } ;
 
 create_gui() ;
 init_values() ;
 run() ;
-
-
-
 
 </script>
