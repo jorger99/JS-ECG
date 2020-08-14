@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<script src='https://abubujs.org/libs/AkPlot.latest.js'></script>
+<script src='https://abubujs.org/libs/Abubu.latest.js'></script>
+
+<html>
+    <center> <h1> Minimal Model SA Node - Single Cell </h1> </center>
+
+    <body> <center>
+      <canvas id="c3" width="512" height="300" style="border:1px solid #000000;">
+        Your browser does not support the HTML5 canvas tag.</canvas> <br>
+    	<canvas id="c1" width="512" height="300" style="border:1px solid #000000;">
+    	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
+    	<canvas id="c2" width="512" height="300" style="border:1px solid #000000;">
+    	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
+
+    </center> </body>
+
+<script>
+
+/*-------------------------------------------------------------------------
+ * initialize our canvas and its useful variables
+ *-------------------------------------------------------------------------
+ */
+var cnvs1 = document.getElementById('c1') ;
+var cnvs2 = document.getElementById('c2') ;
+var cnvs3 = document.getElementById('c3') ;
+
+/*-------------------------------------------------------------------------
+ * initialize our simulation variables
+ *-------------------------------------------------------------------------
+ */
+
+'use strict';
+
+// sim variables
+var dt        =  0.1    ;    // time differential
+var dx        =  0.025   ;    // width of cell
+
+
+// state variables
+var u = 0 ;
+var v = 0 ;
+var w = 0 ;
+
+var d = 0 ;
+var x = 0 ;
+
+
+// ~~~~~ model parameters
+var tvp  = 184.33 ;
+var tvm  = 19.3 ;
+var tvmm = 255  ;
+
+var twp  = 70.0117 ;
+var twm  = 153.403 ;
+var td   = 0.13 ;
+
+var uc   = 0.14 ;
+var uo   = 0.0 ;
+var to   = 13.75 ;
+
+var tsi  = 54.7686 ;
+var k    = 5.0 ;
+
+var ucsi = 0.80 ;
+var uv   = 0.055 ;
+var um   = 1.0  ;
+
+var p    = 0 ;
+var q    = 0 ;
+var pp   = 0 ;
+
+var d    = 0 ;
+
+var tvpn = 0 ;
+
+var xfi  = 0 ;
+var xso  = 0 ;
+var xsi  = 0 ;
+
+var rdm  = 0.333321 ;
+var rdp  = 0.00220334 ;
+
+var dv, dw, dxd ;
+var tr  ;
+
+/*-------------------------------------------------------------------------
+ *  lookup table for hyperbolic tangent
+ *-------------------------------------------------------------------------
+*/
+var table_size = 1000 ;
+var table_xmin = -5 ;
+var table_xmax =  5 ;
+var table_x = 0 ;
+var table_i = 0 ;
+
+var tanh_table = new Float64Array(table_size) ;
+
+for(var i=0; i < table_size; i++){
+  // convert indices [0, table_size] to [xmin, xmax] table domain
+  table_x = (i/table_size*(table_xmax-table_xmin))+table_xmin ;
+  tanh_table[i] = Math.tanh(table_x) ;
+}
+
+function tanh_lookup(inp){
+  if(inp >= 5){return 1} // upper bound of table
+  else if(inp <= -5){return -1} // lower bound of table
+
+  else { // convert [xmin, xmax] domain to indices [0, table_size]
+    table_i = Math.floor(((inp-table_xmin)/(table_xmax-table_xmin)*table_size)) ;
+    //return tanh_table[table_i] ;  // return table value
+  }
+  return Math.tanh(inp) ;  // incase it breaks
+}
+
+
+/*-------------------------------------------------------------------------
+ *  enviroment object: store env variables
+ *-------------------------------------------------------------------------
+*/
+env = {
+    time         : 400  ,
+    pltTime      : 400 ,
+    running      : true ,
+    skip_frames  : 100 ,
+    shock_time   : 600 ,
+    solve        : function(){ env.running = !env.running ; } ,
+    initialize   : initialize ,
+} ;
+
+
+/*------------------------------------------------------------------------
+ * initialize the state variables
+ *------------------------------------------------------------------------
+ */
+function initialize(){
+
+    // initialize the state variables .....................................
+
+    x = (i+0.5)*dx ;
+    u = 0.00 ;
+    v = 0.55 ;
+    w = 0.20 ;
+    d = 0 ;
+
+} ;
+
+
+/*------------------------------------------------------------------------
+ * march the simulation for one time-step
+ *------------------------------------------------------------------------
+ */
+function marchTime(){
+
+    p  = 0 ;
+    q  = 0 ;
+    pp = 0 ;
+
+    if(u > 0.35) { pp = 1 ; }
+    if(u > uc)   { p = 1 ; }
+    if(u > uv)   { q = 1 ; }
+
+    tvpn = (1-pp)*184 + pp*10
+
+    dv  = (1-p)*(1-v)/((1-q)*tvm + tvmm*q) - p*v/tvpn
+    dw  = (1-p)*(1-w)/twm - p*w/twp
+    dxd = (0.5*(1.0 + tanh_lookup((u-0.65)*4))-d)
+
+    if(u >= uc) {
+      dxd=dxd*rdp ;
+    } else {
+      dxd=dxd*rdm
+    }
+
+    v += dt*dv
+    w += dt*dw
+    d += dt*dxd
+
+    xfi = -v*p*(u-uc)*(um-u)/((1-pp)*6+pp*.1)
+
+    xso = (u-uo)**.4*(1-p)/34.17 + p*(.012+.036*(1+tanh_lookup((u-.90)/.10))/2)
+
+    xsi = -w*(d**.5)/(tsi*0.170)
+
+    u += -(xfi+xso+xsi)*dt
+
+    return ;
+}
+
+
+/*-------------------------------------------------------------------------
+ * Plot one: Time vs xfi, xsi, xso
+ *-------------------------------------------------------------------------
+ */
+
+// initialize plot settings
+var plt1 = new Plot(cnvs1) ;
+
+plt1.grid = 'on' ;
+
+// ticks
+plt1.xticks.precision = 0 ;
+plt1.yticks.precision = 3 ;
+
+plt1.xticks.noDivs = 5 ;
+plt1.yticks.noDivs = 6 ;
+
+// font settings
+plt1.borders = 'on' ;
+plt1.margins.left = 80 ;
+
+plt1.legend.visible = true ;
+plt1.legend.location = [c1.width-100, 30]
+
+plt1.xlabel = 'Time' ;
+plt1.ylabel = 'xfi, xsi, xso' ;
+
+// begin the PLOT
+plt1.init() ;
+
+/*-------------------------------------------------------------------------
+ * Plot Two: Time vs u, v, d, w
+ *-------------------------------------------------------------------------
+ */
+
+var plt2 = new Plot(cnvs2) ;
+
+plt2.grid = 'on' ;
+
+
+// ticks
+plt2.xticks.precision = 0 ;
+plt2.yticks.precision = 3 ;
+
+plt2.xticks.noDivs = 5 ;
+plt2.yticks.noDivs = 6 ;
+
+// font settings
+plt2.borders = 'on' ;
+plt2.margins.left = 80 ;
+
+plt2.legend.visible = true ;
+plt2.legend.location = [c1.width-100, 30]
+
+plt2.xlabel = 'Time' ;
+plt2.ylabel = 'Gates' ;
+
+plt2.init()
+
+/*-------------------------------------------------------------------------
+ * Plot THree: Time vs sum currents
+ *-------------------------------------------------------------------------
+ */
+
+var plt3 = new Plot(cnvs3) ;
+
+plt3.grid = 'on' ;
+
+
+// ticks
+plt3.xticks.precision = 0 ;
+plt3.yticks.precision = 3 ;
+
+plt3.xticks.noDivs = 5 ;
+plt3.yticks.noDivs = 6 ;
+
+// font settings
+plt3.borders = 'on' ;
+plt3.margins.left = 80 ;
+
+plt3.xlabel = 'Time' ;
+plt3.ylabel = '(xfi + xso + xsi)' ;
+
+plt3.init()
+
+/*-------------------------------------------------------------------------
+ * add curves to plots
+ *-------------------------------------------------------------------------
+ */
+
+var plt_xmax = 1200 ;
+
+plt1.xlimits = [0, plt_xmax] ;
+plt1.ylimits = [-0.1, 0.1] ;        // voltage plot
+
+plt2.xlimits = [0, plt_xmax] ;
+plt2.ylimits = [0, 1] ;         // gates
+
+plt3.xlimits = [0, plt_xmax] ;
+plt3.ylimits = [-0.02, 0.02] ;         // gates
+
+var xfi_curve = plt1.addCurveFromPoints() ;
+xfi_curve.name = 'xfi' ;
+var xsi_curve = plt1.addCurveFromPoints() ;
+xsi_curve.name = 'xsi' ;
+var xso_curve = plt1.addCurveFromPoints() ;
+xso_curve.name = 'xso' ;
+
+
+var u_curve = plt2.addCurveFromPoints() ;
+u_curve.name = 'u' ;
+var v_curve = plt2.addCurveFromPoints() ;
+v_curve.name = 'v' ;
+var d_curve = plt2.addCurveFromPoints() ;
+d_curve.name = 'd' ;
+var w_curve = plt2.addCurveFromPoints() ;
+w_curve.name = 'w' ;
+
+var ecg_curve = plt3.addCurveFromPoints() ;
+ecg_curve.color = 'Orange' ;
+
+/*-------------------------------------------------------------------------
+ * update plots function
+ *-------------------------------------------------------------------------
+ */
+
+function display(){
+
+  // shift x axis to right as time goes on, only plots 2 & 4
+  if(env.pltTime>plt_xmax){
+      // reset value of env.pltTime
+      env.pltTime-=plt_xmax ;
+
+      // shift x axes to the right by env.pltTime amount and reset
+      plt1.xlimits = [plt1.xlimits[0]+plt_xmax, plt1.xlimits[1]+plt_xmax] ;
+      plt2.xlimits = [plt2.xlimits[0]+plt_xmax, plt2.xlimits[1]+plt_xmax] ;
+      plt3.xlimits = [plt3.xlimits[0]+plt_xmax, plt3.xlimits[1]+plt_xmax] ;
+
+      plt1.reset() ;
+      plt2.reset() ;
+      plt3.reset() ;
+  }
+
+  //~~~~~~~~~~~~~~~~~~ plot 1
+  xfi_curve.plot(env.time, xfi) ;
+  xso_curve.plot(env.time, xso) ;
+  xsi_curve.plot(env.time, xsi) ;
+
+  //~~~~~~~~~~~~~~~~~~ plot 2 (rainbow voltage wave)
+  u_curve.plot(env.time, u) ;
+  v_curve.plot(env.time, v) ;
+  d_curve.plot(env.time, d) ;
+  w_curve.plot(env.time, w) ;
+
+  //~~~~~~~~~~~~~~~~~~ plot 3 (ecg)
+  ecg_curve.plot(env.time, xfi+xso+xsi) ;
+
+  console.log( xfi+xso+xsi );
+
+}
+
+
+
+/*-------------------------------------------------------------------------
+ * run simulation
+ *-------------------------------------------------------------------------
+ */
+
+
+function create_gui(){
+    var gui = new Abubu.Gui() ;
+    var pnl = gui.addPanel() ;
+
+    pnl.add( env, 'initialize') ;
+    pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+    pnl.add( env, 'skip_frames').step(1).min(1) ;
+    pnl.add( env, 'time').listen();
+} ;
+
+function run(){
+    if(env.running){
+        for(var i=0 ; i < env.skip_frames ; i++){
+            marchTime() ;
+            env.time += dt ;
+            env.pltTime += dt ;
+        }
+      display() ;
+    }
+    requestAnimationFrame(run) ;
+} ;
+
+create_gui() ;
+initialize() ;
+run() ;
+
+</script>

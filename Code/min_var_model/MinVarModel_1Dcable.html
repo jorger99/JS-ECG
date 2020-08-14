@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<script src='https://abubujs.org/libs/AkPlot.latest.js'></script>
+<script src='https://abubujs.org/libs/Abubu.latest.js'></script>
+
+<html>
+<center> <h1> Numerical Analysis of Beeler-Reuter Model </h1> </center>
+
+<body> <center>
+  <canvas id="c0" width="512" height="512" style="border:1px solid #000000;">
+    Your browser does not support the HTML5 canvas tag.</canvas>
+  <canvas id="c1" width="512" height="512" style="border:1px solid #000000;">
+    Your browser does not support the HTML5 canvas tag.</canvas><br>
+	<canvas id="c2" width="512" height="256" style="border:1px solid #000000;">
+	  Your browser does not support the HTML5 canvas tag.</canvas>
+	<canvas id="c3" width="512" height="256" style="border:1px solid #000000;">
+	  Your browser does not support the HTML5 canvas tag.</canvas>
+</center> </body>
+
+<script>
+
+/*-------------------------------------------------------------------------
+ * initialize our canvas and its useful variables
+ *-------------------------------------------------------------------------
+ */
+
+var cnvs1 = document.getElementById('c0') ;
+var cnvs2 = document.getElementById('c1') ;
+var cnvs3 = document.getElementById('c2') ;
+var cnvs4 = document.getElementById('c3') ;
+
+var width = cnvs2.width ;
+var height = cnvs2.height ;
+
+/*-------------------------------------------------------------------------
+ * initialize our simulation variables
+ *-------------------------------------------------------------------------
+ */
+
+'use strict';
+
+// sim variables
+var time 			=  0.  		 ;    // time variable
+var pltTime 	=  0. 		 ;    // plotting time variable
+var dt 				=  0.01	   ;    // time differential
+var v_rest    = -84.5737 ;    // resting voltage for all cells
+
+// tissue variables
+var shock_cell_num   =  5       ;    // the first n cells to be given current
+var interest_cell    =  3       ;    // cell we monitor in plots 2-4
+var tissue_x_pos     =  0       ;    // used to calc position of cell N (N*dx)
+var Dlap          =  1.e-3 ;//1.171   ;    // 1.171 +- 0.221 cm^2/s
+
+// 1-D space integration variables (i.e. cells on a cable w/ fixed length)
+var num_cells =  200     ;    // number of cells on cable
+var dx 				=  0.025   ;    // width of cell
+var array_blowup = false ;    // bool to see if array has blown up
+
+// ion currents, used to calculate v_mem every step
+var i_fi 			=  0.			 ;
+var i_so 			=  0. 		 ;
+var i_si 			=  0. 		 ;
+
+// empty arrays to hold voltages and gating variables per cell
+var u = new Float64Array(num_cells) ;
+
+/*-------------------------------------------------------------------------
+* Minimal Model Variables
+* ------------------------------------------------------------------------
+*/
+
+// gating variables
+var u = new Float64Array(num_cells) ;
+var v = new Float64Array(num_cells) ;
+var w = new Float64Array(num_cells) ;
+var s = new Float64Array(num_cells) ;
+
+// voltage dependent time constants
+var tau_vminus = 0; tau_wminus = 0; tau_so = 0; tau_s = 0; tau_o = 0;
+var v_inf = 0; w_inf = 0;
+
+// ~~~~~ model parameters
+
+var u_o = new Float64Array(num_cells); u_u = new Float64Array(num_cells);
+var th_v = new Float64Array(num_cells); th_w = new Float64Array(num_cells);
+var th_vminus = new Float64Array(num_cells); th_o = new Float64Array(num_cells);
+var tau_v1 = new Float64Array(num_cells); tau_v2 = new Float64Array(num_cells);
+var tau_vplus = new Float64Array(num_cells); tau_w1 = new Float64Array(num_cells);
+var tau_w2 = new Float64Array(num_cells); k_w = new Float64Array(num_cells);
+var u_w = new Float64Array(num_cells); tau_wplus = new Float64Array(num_cells);
+var tau_fi = new Float64Array(num_cells); tau_o1 = new Float64Array(num_cells);
+var tau_o2 = new Float64Array(num_cells); tau_so1 = new Float64Array(num_cells);
+var tau_so2 = new Float64Array(num_cells); k_so = new Float64Array(num_cells);
+var u_so = new Float64Array(num_cells); tau_s1 = new Float64Array(num_cells);
+var tau_s2 = new Float64Array(num_cells); k_s = new Float64Array(num_cells);
+var u_s = new Float64Array(num_cells); tau_si = new Float64Array(num_cells);
+var tau_w_inf = new Float64Array(num_cells); w_inf_star = new Float64Array(num_cells);
+
+var epicardial_n = 10 ;  // first n cells are epicardial
+var endocardial_n = 10 ; // last n cells are endocardial, rest are myocardial
+
+
+/*-------------------------------------------------------------------------
+ * Standard Heaviside function
+ * ------------------------------------------------------------------------
+ */
+
+function Hv(num){
+  if(num < 0) { // negative numbers return 0
+    return 0
+  } else if (num >= 0){ // positive numbers return 1
+    return 1
+  } else {
+    console.log("Heaviside Error, num = ", num) ;
+    return NaN
+  }
+} ;
+
+/*-------------------------------------------------------------------------
+ * Beeler-Reuter Model functions of membrane voltage
+ * each gate is a global variable that updates using the
+ * following functions that are based on current voltage
+ * ------------------------------------------------------------------------
+ */
+
+function init_values(){
+   // calculate initial values of gates using default resting voltage
+
+   // set all cells to resting voltage and update their gates accordingly
+
+/*   // endocardial cells, first N cells
+  for(var i=0; i < endocardial_n; i++){
+    u_o[i] = 0; u_u[i] = 1.56;
+    th_v[i] = 0.3; th_w[i] = 0.13; th_vminus[i] = 0.2 ; th_o[i] = 0.006;
+    tau_v1[i] = 75; tau_v2[i] = 10; tau_vplus[i] = 1.4506; tau_w1[i] = 6;
+    tau_w2[i] = 140; k_w[i] = 200; u_w[i] = 0.016; tau_wplus[i] = 280;
+    tau_fi[i] = 0.1; tau_o1[i] = 470; tau_o2[i] = 6; tau_so1[i] = 40;
+    tau_so2[i] = 1.2; k_so[i] = 2; u_so[i] = 0.65; tau_s1[i] = 2.7342;
+    tau_s2[i] = 2; k_s[i] = 2.0994; u_s[i] = 0.9087; tau_si[i] = 2.9013;
+    tau_w_inf[i] = 0.0273; w_inf_star[i] = 0.78;
+  }
+
+  // epicardial cells, last N cells
+  for(var i=(num_cells - epicardial_n); i < num_cells; i++){
+    u_o[i] = 0; u_u[i] = 1.55;
+    th_v[i] = 0.3; th_w[i] = 0.13; th_vminus[i] = 0.006 ; th_o[i] = 0.006;
+    tau_v1[i] = 60; tau_v2[i] = 1150; tau_vplus[i] = 1.4506; tau_w1[i] = 60;
+    tau_w2[i] = 15; k_w[i] = 65; u_w[i] = 0.03; tau_wplus[i] = 200;
+    tau_fi[i] = 0.11; tau_o1[i] = 400; tau_o2[i] = 6; tau_so1[i] = 30.0181;
+    tau_so2[i] = 0.9957; k_so[i] = 2.0458; u_so[i] = 0.65; tau_s1[i] = 2.7342;
+    tau_s2[i] = 16; k_s[i] = 2.0994; u_s[i] = 0.9087; tau_si[i] = 1.8875;
+    tau_w_inf[i] = 0.07; w_inf_star[i] = 0.94;
+  }
+*/
+  // myocardial cells, in between epi and endo
+  //for(var i=endocardial_n;  i < epicardial_n; i++){
+  for(var i=0;  i < num_cells; i++){
+    u_o[i] = 0; u_u[i] = 1.61;
+    th_v[i] = 0.3; th_w[i] = 0.13; th_vminus[i] = 0.1 ; th_o[i] = 0.005;
+    tau_v1[i] = 80; tau_v2[i] = 1.4506; tau_vplus[i] = 1.4506; tau_w1[i] = 70;
+    tau_w2[i] = 8; k_w[i] = 200; u_w[i] = 0.016; tau_wplus[i] = 280;
+    tau_fi[i] = 0.078; tau_o1[i] = 410; tau_o2[i] = 7; tau_so1[i] = 91;
+    tau_so2[i] = 0.8; k_so[i] = 2.1; u_so[i] = 0.6; tau_s1[i] = 2.7342;
+    tau_s2[i] = 4; k_s[i] = 2.0994; u_s[i] = 0.9087; tau_si[i] = 3.3849;
+    tau_w_inf[i] = 0.01; w_inf_star[i] = 0.5;
+  }
+
+  // all cells
+  for(var i=0; i < num_cells; i++){
+    u[i] = 0 ; v[i] = 1; w[i] = 1; s[i] = 0;
+    if (i<10) u[i]=1 ;
+    update_global_vars(i) ;
+  }
+
+} ;
+
+
+function update_global_vars(i){
+	// this function will update every global var to be used
+	// in other functions.. this is necessary to avoid
+	// calculating them more than once per time step
+
+  // voltage is given by u[i]
+
+
+  tau_vminus = (1 - Hv(u[i]-th_vminus[i]))*tau_v1[i] + Hv(u[i]-th_vminus[i])*tau_v2[i] ;
+  tau_wminus = tau_w1[i] + (tau_w2[i] - tau_w1[i])*(1 + Math.tanh(k_w[i]*(u[i]-u_w[i])))/2 ;
+  tau_so = tau_so1[i] + (tau_so2[i] - tau_so1[i])*(1 + Math.tanh(k_so[i]*(u[i]-u_so[i])))/2 ;
+  tau_s = (1 - Hv(u[i]-th_w[i]))*tau_s1[i] + Hv(u[i]-th_w[i])*tau_s2[i] ;
+  tau_o = (1 - Hv(u[i]-th_o[i]))*tau_o1[i] + Hv(u[i]-th_o[i])*tau_o2[i] ;
+
+  //console.log(u[i]) ;
+
+  if(u[i] < th_vminus[i]){
+    v_inf = 1 ;
+  } else if(u[i] >= th_vminus[i]) {
+    v_inf = 0 ;
+  }
+
+  //console.log("w_inf", w_inf)
+  w_inf = (1 - Hv(u[i]-th_o[i]))*(1 - u[i]/tau_w_inf[i]) + Hv(u[i] - th_o[i])*w_inf_star[i] ;
+
+  //console.log(u[i]-th_o[i])
+} ;
+
+
+function update_single_cell(i){
+	// make sure we only calculate alphas and betas
+	// once using the current value of voltage of cell i,  u[i]
+	update_global_vars(i) ;
+
+  // forward euler timestepping
+
+  v[i] += dt * (1-Hv(u[i]-th_v[i])*(v_inf - v[i])/tau_vminus) - Hv(u[i] - th_v[i])*v[i]/tau_vplus[i] ;
+  w[i] += dt * (1-Hv(u[i]-th_w[i]))*(w_inf - w[i])/tau_wminus - Hv(u[i] - th_w[i])*w[i]/tau_wplus[i] ;
+  s[i] += dt * ((1+Math.tanh(k_s[i]*(u[i]-u_s[i])))/2 - s[i])/tau_s ;
+
+  //console.log("gates", v[i], w[i], s[i]) ;
+
+	// update the currents
+  i_fi = -v[i] * Hv(u[i]-th_v[i])*(u[i]-th_v[i])*(u_u[i]-u[i])/tau_fi[i] ;
+  i_so = (u[i]-u_o[i])*(1-Hv(u[i]-th_w[i]))/tau_o + Hv(u[i]-th_w[i])/tau_so ;
+  i_si = -Hv(u[i]-th_w[i])*w[i]*s[i]/tau_si[i] ;
+
+  // external current is applied in order to stimulate action potentials
+	// we only want to apply current to the first 5 cells of the tissue
+  // and we only want to shock in the beginning, and every [xxx] ms
+  // [xxx] is given by env.shock_time
+  i_exter = 0. ;
+  if((time<0.5 || Math.round(time)%env.shock_time == 0) && i <= shock_cell_num){
+    //console.log("applying 60mv current: ", time, i) ;
+    //i_exter = -60.0 ;
+  }
+
+	// fisilly calculate our membrane voltage and
+  // save it in our global voltages for cell i
+	u[i] += -dt*(i_fi + i_so + i_si + i_exter) ;
+
+} ;
+
+/*-------------------------------------------------------------------------
+ * visuals (plots + GUI)
+ *-------------------------------------------------------------------------
+ */
+
+/*-------------------------------------------------------------------------
+ * Plot one: Cell Voltage
+ *-------------------------------------------------------------------------
+ */
+
+// initialize plot settings
+var plt1 = new Plot(cnvs1) ;
+var plt_cell_xmax = num_cells*dx ;
+
+plt1.grid = 'on' ;
+
+plt1.xlimits = [0, plt_cell_xmax] ;   // length axis 		[m]
+plt1.ylimits = [-2, 2] ; 		// voltage axis [mV]
+
+// ticks
+plt1.xticks.precision = 0 ;
+plt1.yticks.precision = 1 ;
+
+plt1.xticks.noDivs = 5 ;
+plt1.yticks.noDivs = 7 ;
+
+// font settings
+plt1.legend.font = '12pt Times' ;
+plt1.borders = 'on' ;
+plt1.margins.left = 80 ;
+
+plt1.xlabel = 'Tissue Position [microns]' ;
+plt1.ylabel = 'Membrane Voltage [mV]' ;
+
+var u_curve = plt1.addCurveFromArrays() ;
+
+// begin the PLOT
+plt1.init() ;
+
+/*-------------------------------------------------------------------------
+ * Plot two: Gates
+ *-------------------------------------------------------------------------
+ */
+
+// initialize plot settings then make function to update it
+var plt2 = new Plot(cnvs2) ;
+var plt_xmax = 1200 ;
+
+plt2.grid = 'on' ;
+
+plt2.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+plt2.ylimits = [-1, 1] ; 		// voltage axis [mV]
+
+// ticks
+plt2.xticks.precision = 0 ;
+plt2.yticks.precision = 1 ;
+
+plt2.xticks.noDivs = 5 ;
+plt2.yticks.noDivs = 7 ;
+
+// setting up legend
+plt2.legend.visible = true ;
+plt2.legend.location = [c1.width-100, 30] ;
+
+// font settings
+plt2.legend.font = '12pt Times' ;
+plt2.borders = 'on' ;
+plt2.margins.left = 80 ;
+
+plt2.xlabel = 'Time [ms]' ;
+plt2.ylabel = 'Gate Variable [a.u.]' ;
+
+var v_curve = plt2.addCurveFromPoints() ;
+v_curve.name='v' ;
+var w_curve = plt2.addCurveFromPoints() ;
+w_curve.name='w' ;
+var s_curve = plt2.addCurveFromPoints() ;
+s_curve.name='s' ;
+
+// begin the PLOT
+plt2.init() ;
+
+/*-------------------------------------------------------------------------
+ * Plot Three: Time vs. Gating Variables
+ *-------------------------------------------------------------------------
+ */
+
+ var plt3 = new Plot(cnvs3) ;
+
+ plt3.grid = 'on' ;
+
+ plt3.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+ plt3.ylimits = [-100, 100] ; 		// voltage axis [mV]
+
+ // ticks
+ plt3.xticks.precision = 0 ;
+ plt3.yticks.precision = 1 ;
+
+ plt3.xticks.noDivs = 5 ;
+ plt3.yticks.noDivs = 7 ;
+
+ // setting up legend
+ plt3.legend.visible = true ;
+ plt3.legend.location = [c1.width-100, 30] ;
+
+ // font settings
+ plt3.legend.font = '12pt Times' ;
+ plt3.borders = 'on' ;
+ plt3.margins.left = 80 ;
+
+ plt3.xlabel = 'Time [ms]' ;
+ plt3.ylabel = 'Membrane Voltage [mV]' ;
+
+ var single_u_curve = plt3.addCurveFromPoints() ;
+ single_u_curve.name='v_mem' ;
+
+ // begin the PLOT
+ plt3.init() ;
+
+ /*-------------------------------------------------------------------------
+  * Plot Four: Time vs. Ionic Currents
+  *-------------------------------------------------------------------------
+  */
+
+var plt4 = new Plot(cnvs4) ;
+
+plt4.grid = 'on' ;
+
+plt4.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+plt4.ylimits = [-5, 5] ; 		// voltage axis [mV]
+
+// ticks
+plt4.xticks.precision = 0 ;
+plt4.yticks.precision = 1 ;
+
+plt4.xticks.noDivs = 5 ;
+plt4.yticks.noDivs = 8 ;
+
+// setting up legend
+plt4.legend.visible = true ;
+plt4.legend.location = [c1.width-100, 30] ;
+
+// font settings
+plt4.legend.font = '12pt Times' ;
+plt4.borders = 'on' ;
+plt4.margins.left = 80 ;
+
+plt4.xlabel = 'Time [ms]' ;
+plt4.ylabel = 'Current [mA]' ;
+
+var ifi_curve = plt4.addCurveFromPoints() ;
+ifi_curve.name= 'i_fi' ;
+var iso_curve = plt4.addCurveFromPoints() ;
+iso_curve.name= 'i_so' ;
+var isi_curve = plt4.addCurveFromPoints() ;
+isi_curve.name= 'i_si' ;
+
+plt4.init()
+
+/*-------------------------------------------------------------------------
+ * Create function to update all plots
+ *-------------------------------------------------------------------------
+ */
+
+function update_plots(k){
+
+	// shift x axis to right as time goes on, only plots 2-4
+	if(pltTime>plt_xmax){
+			// reset value of pltTime
+			pltTime-=plt_xmax ;
+
+			// shift x axes to the right by pltTime amount and reset
+			plt2.xlimits = [plt2.xlimits[0]+plt_xmax, plt2.xlimits[1]+plt_xmax] ;
+			plt3.xlimits = [plt3.xlimits[0]+plt_xmax, plt3.xlimits[1]+plt_xmax] ;
+			plt4.xlimits = [plt4.xlimits[0]+plt_xmax, plt4.xlimits[1]+plt_xmax] ;
+
+
+			plt2.reset() ;
+			plt3.reset() ;
+			plt4.reset() ;
+	}
+
+  // cell 5 is 5*dx from the origin, dx is length of each cell
+  // multiply every element of the array (0,1,2,3....N) by dx
+  tissue_x_pos = [...u.keys()].map(function(x) {return x*dx}) ;
+
+  // plot 1  (cell voltage)
+  u_curve.draw(tissue_x_pos, u) ;
+
+  // plot 2  (gates)
+  v_curve.draw(time, v[interest_cell]) ;
+  w_curve.draw(time, w[interest_cell]) ;
+  s_curve.draw(time, s[interest_cell]) ;
+
+	// plot 3  (membrane voltage)
+	single_u_curve.draw(time, u[interest_cell])
+
+	// plot 4  (currents)
+	ifi_curve.draw(time, i_fi) ;
+	iso_curve.draw(time, i_so) ;
+	isi_curve.draw(time, i_si) ;
+
+} ;
+
+
+/*-------------------------------------------------------------------------
+ * run simulation
+ *-------------------------------------------------------------------------
+ */
+
+ // store variables in env
+env = {
+  running 	   : false ,
+ 	skip_frames  : 1 ,
+  shock_time   : 400 ,
+ 	solve     	 : function(){ env.running = !env.running ; } ,
+  init         : function(){ init_values() ;} ,
+} ;
+
+
+function create_gui(){
+  var gui = new Abubu.Gui() ;
+  var pnl = gui.addPanel() ;
+
+  pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+  pnl.add( env, 'skip_frames').step(1).min(1) ;
+  pnl.add( env, 'shock_time').step(20).min(10) ;
+} ;
+
+
+function run(){
+	if(env.running){
+    // first loop will run X times before drawing plots to speed up animation
+    for(var i=0; i < env.skip_frames; i++){
+//~~~~~~~~~~~~~~~~~ calculate voltage for every cell on cable
+      for(var k=0; k < num_cells; k++){
+        // calculate voltages using normal BR model for k-th cell on cable
+        update_single_cell(k);
+      }
+
+      console.log("Updated all cells") ;
+
+//~~~~~~~~~~~~~~~~~ calculate laplacians and update cell voltages
+      for(var k=0; k < num_cells; k++){
+
+        // laplacian does not work on first and last cell, since k-1/k+1 DNE
+        // for k=0, set k=-1 equal to k=1, and for k=N, N+1 equal to N-1
+
+        if(k==0){  // k = 0 laplacian
+          xlap = 2*(u[k+1]-u[k])
+        } else if(k==num_cells-1) { // k = N laplacian
+          xlap = 2*(u[k-1]-u[k])
+        } else { // every other laplacian between 0 and N is normal
+          xlap = u[k+1] + u[k-1] - 2.*u[k] ;
+        }
+
+        // fisilly update each cell's voltage according to its neighboring lap
+        u[k] += dt*xlap*Dlap/(dx*dx) ;
+      } // end laplacian loop over every cell
+
+      // update time at the end of every tissue simulation and update the plots
+      time 		+= dt ;
+      pltTime += dt ;
+      update_plots(interest_cell) ;
+    } // end for loop between skipframes
+  }
+
+  // check all values inside u for NaN's
+  for(var i=0; i < u.length; i++){
+    if(isNaN(u[i])){
+      array_blowup = true ;
+      //console.log(i,"-th cell is NaN") ;
+    }
+  }
+
+  // function will call itself if it hasnt blown up
+  if(array_blowup == false){
+    setTimeout(run, 0) ;  // repeat run function as long as array is not NaN
+  }
+} ;
+
+create_gui() ;
+//console.log("Initializing") ;
+init_values() ;
+//console.log('Running') ;
+run() ;
+
+</script>

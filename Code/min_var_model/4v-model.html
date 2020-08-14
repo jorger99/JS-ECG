@@ -54,7 +54,6 @@ var ecg_integral1 = 0 ;
 var ecg_integral2 = 0 ;
 var r1, r2 ;
 
-var table_size = 1000 ;  // for lookup table of tanh
 
 /*-------------------------------------------------------------------------
  * Minimal Model Variables
@@ -68,6 +67,8 @@ var w = new Float64Array(num_cells) ;
 var s = new Float64Array(num_cells) ;
 
 //var u_new = new Float64Array(num_cells) ;
+var x = new Float64Array(num_cells) ;
+
 var us = {
   old : new Float64Array(num_cells) ,
   rec : new Float64Array(num_cells) ,
@@ -78,10 +79,10 @@ u     = new Float64Array(num_cells) ;
 //u_new = us.rec ;
 //u [20];
 // position vector
-var x = new Float64Array(num_cells) ;
 
 // phase field
 var phi = new Float64Array(num_cells) ;
+
 
 // ~~~~~ model parameters
 var  uo     = new Float64Array(num_cells) ;
@@ -154,6 +155,46 @@ var du2dt, dv2dt, dw2dt, ds2dt ;
 var Jfi , Jso, Jsi ;
 var xlap ;
 
+/*-------------------------------------------------------------------------
+ *  lookup table for hyperbolic tangent
+ *-------------------------------------------------------------------------
+*/
+
+// initialize the table
+var table_size = 1000 ;
+var table_xmin = -5 ;
+var table_xmax =  5 ;
+var table_x = 0 ;
+var table_i = 0 ;
+
+var tanh_table = new Float64Array(table_size) ;
+
+for(var i=0; i < table_size; i++){
+  // convert indices [0, table_size] to [xmin, xmax] table domain
+  table_x = (i/table_size*(table_xmax-table_xmin))+table_xmin ;
+  tanh_table[i] = Math.tanh(table_x) ;
+}
+
+function tanh_lookup(inp){
+  if(inp >= 5){return 1} // upper bound of table
+  else if(inp <= -5){return -1} // lower bound of table
+
+  else { // convert [xmin, xmax] domain to indices [0, table_size]
+    table_i = Math.floor(((inp-table_xmin)/(table_xmax-table_xmin)*table_size)) ;
+    return tanh_table[table_i] ;
+  }
+  //return Math.tanh(inp) ; // incase it breaks
+}
+
+
+/*-------------------------------------------------------------------------
+ * Standard Heaviside function
+ *-------------------------------------------------------------------------
+ */
+function H(inp){
+    return (inp<0) ? 0 : 1 ;
+} ;
+
 
 // store variables in env
 env = {
@@ -206,33 +247,6 @@ twN_model  = [0.07   , 0.0273 , 0.01   , 0.175  , 0.07  ] ;
 wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
 
 
-/*-------------------------------------------------------------------------
- * Standard Heaviside function
- *-------------------------------------------------------------------------
- */
-function H(inp){
-    return (inp<0) ? 0 : 1 ;
-} ;
-
-
-/*-------------------------------------------------------------------------
- *  lookup table for hyperbolic tangent
- *-------------------------------------------------------------------------
-
-// initialize the table
-var tanh_table = new Float64Array(table_size) ;
-
-for(var i=0; i < table_size; i++){
-
-  tanh_table[i]
-
-}
-
-function tanh_lookup(inp){
-
-}
-
-*/
 
 /*------------------------------------------------------------------------
  * initialize the state variables and the state variables
@@ -357,8 +371,9 @@ function marchTime(){
 
         // updating voltage dependent parameters .........................
         tvm[i] = (1.-H(u[i]-thvm[i]))*tv1m[i] + H( u[i] - thvm[i])*tv2m[i] ;
-        twm[i] = tw1m[i] + (tw2m[i] - tw1m[i])*(1.+Math.tanh(kwm[i]*(u[i]-uwm[i])))/2. ;
-        tso[i] = tso1[i] + (tso2[i] - tso1[i])*(1.+Math.tanh(kso[i]*(u[i]-uso[i])))/2. ;
+        twm[i] = tw1m[i] + (tw2m[i] - tw1m[i])*(1.+tanh_lookup(kwm[i]*(u[i]-uwm[i])))/2. ;
+        tso[i] = tso1[i] + (tso2[i] - tso1[i])*(1.+tanh_lookup(kso[i]*(u[i]-uso[i])))/2. ;
+
         ts [i] = (1.-H(u[i]-thw[i]))*ts1[i] + H(u[i]-thw[i])*ts2[i] ;
         to [i] = (1.-H(u[i]-tho[i]))*to1[i] + H(u[i]-tho[i])*to2[i] ;
 
@@ -374,7 +389,7 @@ function marchTime(){
         du2dt = xlap/(dx*dx) - (Jfi+Jso+Jsi+Jexter) ;
         dv2dt = (1.-H(u[i]-thv[i]))*(vN[i]-v[i])/tvm[i] - H(u[i]-thv[i])*v[i]/tvp[i] ;
         dw2dt = (1.-H(u[i]-thw[i]))*(wN[i] - w[i])/twm[i] - H(u[i]-thw[i])*w[i]/twp[i] ;
-        ds2dt = ((1.+Math.tanh(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
+        ds2dt = ((1.+tanh_lookup(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
 
         // time integration ..............................................
         u_new[i] = u[i] + du2dt*dt ;
@@ -490,20 +505,20 @@ plt3.init() ;
 
 var alloc_space = 0.05;  // how much space each line gets
 var offset = 0.1 ;           // offset from x axis
-var num_lines = 50 ;          // how many cells we want to plot
+var num_lines = 79 ;          // how many cells we want to plot
 var line_array = [] ;
 
 var cell_frac = Math.round((num_cells-env.no_cells)/num_lines) ;
 
 for(i=0; i < num_lines; i++){
   var curve = plt2.addCurveFromPoints() ;
-  curve.color = "#00000030" ;  // RGBA (alpha)
+  curve.color = "#00000030" ;  // RGBA (red green blue alpha)
   line_array.push(curve) ;
 
 }
 
 plt2.xlimits = [0, plt_xmax] ;   // length axis    [m]
-plt2.ylimits = [0, 4.5] ;
+plt2.ylimits = [0, 5.5] ;
 
 
 var tissue_voltage_curve = plt3.addCurveFromArrays() ;
@@ -528,11 +543,9 @@ function display(){
       // shift x axes to the right by env.pltTime amount and reset
       plt1.xlimits = [plt1.xlimits[0]+plt_xmax, plt1.xlimits[1]+plt_xmax] ;
       plt2.xlimits = [plt2.xlimits[0]+plt_xmax, plt2.xlimits[1]+plt_xmax] ;
-      //plt3.xlimits = [plt3.xlimits[0]+plt_xmax, plt3.xlimits[1]+plt_xmax] ;
 
       plt1.reset() ;
       plt2.reset() ;
-      //plt3.reset() ;
   }
 
   //~~~~~~~~~~~~~~~~~~ plot 1  (tissue voltage)
@@ -570,7 +583,7 @@ function display(){
   }
 */
 
-  ecg_integral = (ecg_integral2*0 + ecg_integral1) ;
+  ecg_integral = (ecg_integral2 + ecg_integral1) ;
   lapl_curve.draw(env.time, ecg_integral) ;
 
 
@@ -605,7 +618,7 @@ function run(){
             env.time += dt ;
             env.pltTime += dt ;
         }
-        display() ;
+      display() ;
     }
     requestAnimationFrame(run) ;
 } ;
