@@ -160,29 +160,27 @@ function marchTime(){
     if(u > uc)   { p = 1 ; }
     if(u > uv)   { q = 1 ; }
 
-    tvpn = (1-pp)*184 + pp*10
+    tvpn = (1-pp)*184 + pp*10 ;
 
-    dv  = (1-p)*(1-v)/((1-q)*tvm + tvmm*q) - p*v/tvpn
-    dw  = (1-p)*(1-w)/twm - p*w/twp
-    dxd = (0.5*(1.0 + tanh_lookup((u-0.65)*4))-d)
+    dv  = (1-p)*(1-v)/((1-q)*tvm + tvmm*q) - p*v/tvpn ;
+    dw  = (1-p)*(1-w)/twm - p*w/twp ;
+    dxd = (0.5*(1.0 + tanh_lookup((u-0.65)*4))-d) ;
 
     if(u >= uc) {
       dxd=dxd*rdp ;
     } else {
-      dxd=dxd*rdm
+      dxd=dxd*rdm ;
     }
 
-    v += dt*dv
-    w += dt*dw
-    d += dt*dxd
+    v += dt*dv ;
+    w += dt*dw ;
+    d += dt*dxd ;
 
-    xfi = -v*p*(u-uc)*(um-u)/((1-pp)*6+pp*.1)
+    xfi = -v*p*(u-uc)*(um-u)/((1-pp)*6+pp*.1) ;
+    xso = (u-uo)**.4*(1-p)/34.17 + p*(.012+.036*(1+tanh_lookup((u-.90)/.10))/2) ;
+    xsi = -w*(d**.5)/(tsi*0.170) ;
 
-    xso = (u-uo)**.4*(1-p)/34.17 + p*(.012+.036*(1+tanh_lookup((u-.90)/.10))/2)
-
-    xsi = -w*(d**.5)/(tsi*0.170)
-
-    u += -(xfi+xso+xsi)*dt
+    u += -(xfi+xso+xsi)*dt ;
 
     return ;
 }
@@ -344,8 +342,6 @@ function display(){
 
   //~~~~~~~~~~~~~~~~~~ plot 3 (ecg)
   ecg_curve.plot(env.time, xfi+xso+xsi) ;
-
-  console.log( xfi+xso+xsi );
 
 }
 
