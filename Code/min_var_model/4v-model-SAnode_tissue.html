@@ -36,15 +36,11 @@ var cnvs3 = document.getElementById('c3') ;
 var dt        =  0.05    ;    // time differential
 
 // tissue variables
-var shock_cell_num   =  5       ;    // the first n cells to be shocked
-var interest_cell    =  50      ;    // cell we monitor in plots 2-4
-var tissue_x_pos     =  0       ;    // used to calc position of cell N (N*dx)
 var diffCoef         =  1.e-3   ;    // 1.171 +- 0.221 cm^2/s
 
 // 1-D space integration variables (i.e. cells on a cable w/ fixed length)
 var num_cells    =  580    ;    // number of cells on cable
 var dx           =  0.025   ;    // width of cell
-var array_blowup = false    ;    // bool to see if array has blown up
 
 // create array and var to hold laplacian values for ECG calculations
 var sum_laplacian = 0 ;
@@ -228,8 +224,10 @@ function H(inp){
     return (inp<0) ? 0 : 1 ;
 } ;
 
-
-// store variables in env
+/*-------------------------------------------------------------------------
+ * env variable to hold useful objects
+ *-------------------------------------------------------------------------
+ */
 env = {
     time         : 0  ,
     pltTime      : 0  ,
@@ -281,10 +279,6 @@ twN_model  = [0.07   , 0.0273 , 0.01   , 0.175  , 0.07  ] ;
 wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
 
 
-/*-------------------------------------------------------------------------
- * SA node paramaters
- *-------------------------------------------------------------------------
- */
 
 
 
@@ -342,6 +336,11 @@ function initialize(){
         tsi [i] = tsi_model[ct] ;
         twN [i] = twN_model[ct] ;
         wNS [i] = wNS_model[ct] ;
+
+        /*-------------------------------------------------------------------------
+        * SA node paramaters
+        *-------------------------------------------------------------------------
+        */
 
         tvp_SA  [i] = 184.33 ;
         tvm_SA  [i] = 19.3 ;
@@ -407,20 +406,6 @@ function marchTime(){
         //u  = us.old ;
         //u_new = us.rec ;
         if(phi[i] < 0.00001){ continue }
-
-        // set voltage to 1 if it is time for a shock, only apply to first i<N cells
-
-        /*
-        Jexter = 0;
-        if((env.time<0.5 || Math.round(env.time)%env.shock_time == 0) && i >= env.no_cells && i <= env.no_cells+env.sa_node_n+shock_cell_num){
-        //Jexter = 1 ;
-          u[i] = 0.4 ;
-        }
-
-        if(i%20 == 3){
-          console.log(i, SA[i])
-        }
-*/
 
         // Calculate phase field derivative, then laplacian
         //us.old[10];
@@ -491,12 +476,6 @@ function marchTime(){
         dw2dt = dw2dt_norm*(1-SA[i]) + dw2dt_SA*SA[i]
 
         ds2dt = ds2dt_norm ; //  not sure if 'd' is same as 's'
-
-        if(i%200==1){
-          //console.log(i, du2dt, dv2dt, dw2dt, ds2dt)
-          //console.log(i, du2dt_norm, du2dt_SA)
-          console.log("gates", i, u[i], v[i], w[i], s[i])
-        }
 
         // time integration ..............................................
         u_new[i] = u[i] + du2dt*dt ;
@@ -608,7 +587,6 @@ plt3.init() ;
  *-------------------------------------------------------------------------
  */
 
-
 // create rainbow plot
 
 var alloc_space = 0.05;  // how much space each line gets
@@ -713,9 +691,9 @@ function create_gui(){
     pnl.add( env, 'initialize') ;
     pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
     pnl.add( env, 'skip_frames').step(1).min(1) ;
-    pnl.add( env, 'epicardial_n').step(1).min(0).max(num_cells) ;
-    pnl.add( env, 'endocardial_n').step(1).min(0).max(num_cells) ;
-    pnl.add( env, 'shock_time').step(20).min(10) ;
+    pnl.add( env, 'sa_node_n').step(1).min(0).max(150) ;
+    pnl.add( env, 'epicardial_n').step(1).min(0).max(150) ;
+    pnl.add( env, 'endocardial_n').step(1).min(0).max(150) ;
     pnl.add( env, 'time').listen();
 } ;
 
