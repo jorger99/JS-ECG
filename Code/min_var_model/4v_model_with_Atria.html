@@ -30,17 +30,21 @@ var cnvs3 = document.getElementById('c3') ;
  *-------------------------------------------------------------------------
  */
 
-"use strict";
+'use strict';
 
 // sim variables
 var dt        =  0.05    ;    // time differential
 
 // tissue variables
+var shock_cell_num   =  5       ;    // the first n cells to be shocked
+var interest_cell    =  50      ;    // cell we monitor in plots 2-4
+var tissue_x_pos     =  0       ;    // used to calc position of cell N (N*dx)
 var diffCoef         =  1.e-3   ;    // 1.171 +- 0.221 cm^2/s
 
 // 1-D space integration variables (i.e. cells on a cable w/ fixed length)
 var num_cells    =  580    ;    // number of cells on cable
 var dx           =  0.025   ;    // width of cell
+var array_blowup = false    ;    // bool to see if array has blown up
 
 // create array and var to hold laplacian values for ECG calculations
 var sum_laplacian = 0 ;
@@ -148,41 +152,8 @@ var  vN     = new Float64Array(num_cells) ;
 var  wN     = new Float64Array(num_cells) ;
 
 var du2dt, dv2dt, dw2dt, ds2dt ;
-var du2dt_norm, dv2dt_norm, dw2dt_norm, ds2dt_norm ;
-var du2dt_SA, dv2dt_SA, dw2dt_SA, ds2dt_SA ;
-
 var Jfi , Jso, Jsi ;
 var xlap ;
-
-var xfi_SA, xsi_SA, xso_SA ;
-var dxd, dw ;
-
-var SA      = new Float64Array(num_cells);
-
-var d_SA    = new Float64Array(num_cells);
-var x_SA    = new Float64Array(num_cells);
-
-var tvp_SA  = new Float64Array(num_cells);
-var tvm_SA  = new Float64Array(num_cells);
-var tvmm_SA = new Float64Array(num_cells);
-var twp_SA  = new Float64Array(num_cells);
-var twm_SA  = new Float64Array(num_cells);
-var td_SA   = new Float64Array(num_cells);
-var uc_SA   = new Float64Array(num_cells);
-var uo_SA   = new Float64Array(num_cells);
-var to_SA   = new Float64Array(num_cells);
-var tsi_SA  = new Float64Array(num_cells);
-var k_SA    = new Float64Array(num_cells);
-var ucsi_SA = new Float64Array(num_cells);
-var uv_SA   = new Float64Array(num_cells);
-var um_SA   = new Float64Array(num_cells);
-var p_SA    = new Float64Array(num_cells);
-var q_SA    = new Float64Array(num_cells);
-var pp_SA   = new Float64Array(num_cells);
-var d_SA    = new Float64Array(num_cells);
-var tvpn_SA = new Float64Array(num_cells);
-var rdm_SA  = new Float64Array(num_cells);
-var rdp_SA  = new Float64Array(num_cells);
 
 /*-------------------------------------------------------------------------
  *  lookup table for hyperbolic tangent
@@ -190,9 +161,9 @@ var rdp_SA  = new Float64Array(num_cells);
 */
 
 // initialize the table
-var table_size = 10000 ;
-var table_xmin = -15 ;
-var table_xmax =  15 ;
+var table_size = 1000 ;
+var table_xmin = -5 ;
+var table_xmax =  5 ;
 var table_x = 0 ;
 var table_i = 0 ;
 
@@ -224,14 +195,12 @@ function H(inp){
     return (inp<0) ? 0 : 1 ;
 } ;
 
-/*-------------------------------------------------------------------------
- * env variable to hold useful objects
- *-------------------------------------------------------------------------
- */
+
+// store variables in env
 env = {
     time         : 0  ,
     pltTime      : 0  ,
-    running      : false ,
+    running      : true ,
     skip_frames  : 100 ,
     shock_time   : 600 ,
     solve        : function(){ env.running = !env.running ; } ,
@@ -239,8 +208,7 @@ env = {
 
     no_cells      : 50 ,  // how many empty spaces we have for cells, in cells
     node_pos      : 40 ,  // position of nodes from tissue, in cells
-    sa_node_n     : 20  , // first n cells are SA node cells
-    epicardial_n  : 40 ,  // next n cells are epicardial
+    epicardial_n  : 40 ,  // first n cells are epicardial
     endocardial_n : 40 ,  // last n cells are endocardial, rest are myocardial
 } ;
 
@@ -248,7 +216,7 @@ env = {
  * 4 variable model coefficients
  *-------------------------------------------------------------------------
  */
-// model   = [epi    , endo   , M      , PB     , TNNP  ]
+// var parameter  = [epi    , endo   , M      , PB     , TNNP  ]
 uo_model   = [0      , 0      , 0      , 0      , 0     ] ;
 uu_model   = [1.55   , 1.56   , 1.61   , 1.45   , 1.58  ] ;
 thv_model  = [0.3    , 0.3    , 0.3    , 0.35   , 0.3   ] ;
@@ -280,10 +248,6 @@ wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
 
 
 
-
-
-
-
 /*------------------------------------------------------------------------
  * initialize the state variables and the state variables
  *------------------------------------------------------------------------
@@ -296,16 +260,9 @@ function initialize(){
     //for(var i=0; i < num_cells; i++){
     for(var i=0; i < num_cells; i++){
 
-        SA[i] = 0 ; // track if cell is SA node
-        if(i <= env.no_cells + env.sa_node_n && i >= env.no_cells){
-          SA[i] = 1; // only first n cells are SA
-        }
-
-        else if(i <= env.no_cells + env.sa_node_n + env.epicardial_n && i >= env.no_cells + env.sa_node_n){ct=0;}
+        if(i <= env.no_cells + env.epicardial_n){ct=0}
         else if(i <= (num_cells - env.no_cells - env.endocardial_n)){ct=2}
         else {ct=1}  // in between is myocardial
-
-        //console.log(i, ct, SA[i])
 
         // copy values of model according to each cell's assigned celltype [ct]
         uo  [i] = uo_model[ct] ;
@@ -337,40 +294,8 @@ function initialize(){
         twN [i] = twN_model[ct] ;
         wNS [i] = wNS_model[ct] ;
 
-        /*-------------------------------------------------------------------------
-        * SA node paramaters
-        *-------------------------------------------------------------------------
-        */
-
-        tvp_SA  [i] = 184.33 ;
-        tvm_SA  [i] = 19.3 ;
-        tvmm_SA [i] = 255  ;
-
-        twp_SA  [i] = 70.0117 ;
-        twm_SA  [i] = 153.403 ;
-        td_SA   [i] = 0.13 ;
-
-        uc_SA   [i] = 0.14 ;
-        uo_SA   [i] = 0.0 ;
-        to_SA   [i] = 13.75 ;
-
-        tsi_SA  [i] = 54.7686 ;
-        k_SA    [i] = 5.0 ;
-
-        ucsi_SA [i] = 0.80 ;
-        uv_SA   [i] = 0.055 ;
-        um_SA   [i] = 1.0  ;
-
-        p_SA    [i] = 0 ;
-        q_SA    [i] = 0 ;
-        pp_SA   [i] = 0 ;
-
-        d_SA    [i] = 0 ;
-
-        tvpn_SA [i] = 0 ;
-
-        rdm_SA  [i] = 0.333321 ;
-        rdp_SA  [i] = 0.00220334 ;
+        // scale tsi from 1.8875 to 3.3849
+        // tsi[i] = 1.8875 + i/env.epicardial_n*(3.3849-1.8875) ;
 
     }
 
@@ -382,11 +307,12 @@ function initialize(){
         w[i] = 1 ;
         s[i] = 0 ;
 
+        // if (i<5) u[i]=1 ;  // give voltage to first 5 cells
+
         // initialize phase field
         phi[i] = (-Math.tanh(i-num_cells+env.no_cells)+1.) * (1.+Math.tanh(i-env.no_cells))/4. ;
 
     }
-
 
 } ;
 
@@ -406,6 +332,14 @@ function marchTime(){
         //u  = us.old ;
         //u_new = us.rec ;
         if(phi[i] < 0.00001){ continue }
+
+        // set voltage to 1 if it is time for a shock, only apply to first i<N cells
+        Jexter = 0;
+        if((env.time<0.5 || Math.round(env.time)%env.shock_time == 0) && i >= env.no_cells && i <= env.no_cells+shock_cell_num){
+        //Jexter = 1 ;
+          u[i] = 0.4 ;
+        }
+
 
         // Calculate phase field derivative, then laplacian
         //us.old[10];
@@ -440,49 +374,16 @@ function marchTime(){
         Jsi = -H(u[i]-thw[i])*w[i]*s[i]/tsi[i] ;
 
         // Calculating Derivatives .......................................
-        du2dt_norm = xlap/(dx*dx) - (Jfi+Jso+Jsi) ;
-        dv2dt_norm = (1.-H(u[i]-thv[i]))*(vN[i]-v[i])/tvm[i] - H(u[i]-thv[i])*v[i]/tvp[i] ;
-        dw2dt_norm = (1.-H(u[i]-thw[i]))*(wN[i] - w[i])/twm[i] - H(u[i]-thw[i])*w[i]/twp[i] ;
-        ds2dt_norm = ((1.+tanh_lookup(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
-
-        // SA terms ......................................................
-
-        p_SA[i]  = 0 ;
-        q_SA[i]  = 0 ;
-        pp_SA[i] = 0 ;
-
-        if(u[i] > 0.35) { pp_SA[i] = 1 ; }
-        if(u[i] > uc_SA[i]) { p_SA[i] = 1 ; }
-        if(u[i] > uv_SA[i]) { q_SA[i] = 1 ; }
-
-        tvpn_SA[i] = (1-pp_SA[i])*184 + pp_SA[i]*10 ;
-
-        dxd = (0.5*(1.0 + tanh_lookup((u[i]-0.65)*4))-d_SA[i])*(rdp_SA[i]*p_SA[i] + rdm_SA[i]*(1-p_SA[i])) ;
-        d_SA[i] += dt*dxd ;
-
-        // calculating currents
-        xfi_SA = -v[i]*p_SA[i]*(u[i]-uc_SA[i])*(um_SA[i]-u[i])/((1-pp_SA[i])*6+pp_SA[i]*.1) ;
-        xso_SA = (u[i]-uo_SA[i])**.4*(1-p_SA[i])/34.17 + p_SA[i]*(.012+.036*(1+tanh_lookup((u[i]-.90)/.10))/2) ;
-        xsi_SA = -w[i]*(d_SA[i]**.5)/(tsi_SA[i]*0.170) ;
-
-        // Calculating Derivatives
-        du2dt_SA = -(xfi_SA + xso_SA + xsi_SA)
-        dv2dt_SA = (1-p_SA[i])*(1-v[i])/((1-q_SA[i])*tvm_SA[i] + tvmm_SA[i]*q_SA[i]) - p_SA[i]*v[i]/tvpn_SA[i] ;
-        dw2dt_SA  = (1-p_SA[i])*(1-w[i])/twm_SA[i] - p_SA[i]*w[i]/twp_SA[i] ;
-
-        // finalizing derivatives between models
-        du2dt = du2dt_norm*(1-SA[i]) + du2dt_SA*SA[i]
-        dv2dt = dv2dt_norm*(1-SA[i]) + dv2dt_SA*SA[i]
-        dw2dt = dw2dt_norm*(1-SA[i]) + dw2dt_SA*SA[i]
-
-        ds2dt = ds2dt_norm ; //  not sure if 'd' is same as 's'
+        du2dt = xlap/(dx*dx) - (Jfi+Jso+Jsi) ;
+        dv2dt = (1.-H(u[i]-thv[i]))*(vN[i]-v[i])/tvm[i] - H(u[i]-thv[i])*v[i]/tvp[i] ;
+        dw2dt = (1.-H(u[i]-thw[i]))*(wN[i] - w[i])/twm[i] - H(u[i]-thw[i])*w[i]/twp[i] ;
+        ds2dt = ((1.+tanh_lookup(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
 
         // time integration ..............................................
         u_new[i] = u[i] + du2dt*dt ;
         v[i] += dv2dt*dt ;
         w[i] += dw2dt*dt ;
         s[i] += ds2dt*dt ;
-
     }
     //var ut = us.uold ;
     //us.uold = us.unew ;
@@ -508,7 +409,7 @@ var plt_xmax = 1000 ;
 plt1.grid = 'on' ;
 
 plt1.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
-plt1.ylimits = [-1, 1] ; 		// voltage axis [mV]
+plt1.ylimits = [-0.2, 0.2] ; 		// voltage axis [mV]
 
 // ticks
 plt1.xticks.precision = 0 ;
@@ -570,7 +471,7 @@ plt3.xticks.precision = 0 ;
 plt3.yticks.precision = 1 ;
 
 plt3.xticks.noDivs = 5 ;
-plt3.yticks.noDivs = 9 ;
+plt3.yticks.noDivs = 7 ;
 
 // font settings
 plt3.borders = 'on' ;
@@ -587,11 +488,12 @@ plt3.init() ;
  *-------------------------------------------------------------------------
  */
 
+
 // create rainbow plot
 
 var alloc_space = 0.05;  // how much space each line gets
 var offset = 0.1 ;           // offset from x axis
-var num_lines = 3 ;          // how many cells we want to plot
+var num_lines = 79 ;          // how many cells we want to plot
 var line_array = [] ;
 
 var cell_frac = Math.round((num_cells-env.no_cells)/num_lines) ;
@@ -691,9 +593,9 @@ function create_gui(){
     pnl.add( env, 'initialize') ;
     pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
     pnl.add( env, 'skip_frames').step(1).min(1) ;
-    pnl.add( env, 'sa_node_n').step(1).min(0).max(150) ;
-    pnl.add( env, 'epicardial_n').step(1).min(0).max(150) ;
-    pnl.add( env, 'endocardial_n').step(1).min(0).max(150) ;
+    pnl.add( env, 'epicardial_n').step(1).min(0).max(num_cells) ;
+    pnl.add( env, 'endocardial_n').step(1).min(0).max(num_cells) ;
+    pnl.add( env, 'shock_time').step(20).min(10) ;
     pnl.add( env, 'time').listen();
 } ;
 
@@ -709,14 +611,8 @@ function run(){
     requestAnimationFrame(run) ;
 } ;
 
-console.time("GUI") ;
 create_gui() ;
-console.timeEnd("GUI") ;
-
-console.time("Initialize") ;
 initialize() ;
-console.timeEnd("Initialize") ;
-
 run() ;
 
 </script>
