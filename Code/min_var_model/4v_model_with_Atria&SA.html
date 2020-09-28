@@ -12,6 +12,7 @@
     	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
     	<canvas id="c3" width="512" height="220" style="border:1px solid #000000;">
     	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
+      <canvas id="c4" width="512" height="220" style="border:1px solid #000000;">
 
     </center> </body>
 
@@ -24,6 +25,7 @@
 var cnvs1 = document.getElementById('c1') ;
 var cnvs2 = document.getElementById('c2') ;
 var cnvs3 = document.getElementById('c3') ;
+var cnvs4 = document.getElementById('c4') ;
 
 /*-------------------------------------------------------------------------
  * initialize our simulation variables
@@ -39,7 +41,7 @@ var dt        =  0.05    ;    // time differential
 var diffCoef         =  1.e-3   ;    // 1.171 +- 0.221 cm^2/s
 
 // 1-D space integration variables (i.e. cells on a cable w/ fixed length)
-var num_cells    =  580    ;    // number of cells on cable
+var num_cells    =  700    ;    // number of cells on cable
 var dx           =  0.025   ;    // width of cell
 
 // create array and var to hold laplacian values for ECG calculations
@@ -148,41 +150,43 @@ var  vN     = new Float64Array(num_cells) ;
 var  wN     = new Float64Array(num_cells) ;
 
 var du2dt, dv2dt, dw2dt, ds2dt ;
-var du2dt_norm, dv2dt_norm, dw2dt_norm, ds2dt_norm ;
-var du2dt_SA, dv2dt_SA, dw2dt_SA, ds2dt_SA ;
+var du2dt_rest, dv2dt_rest, dw2dt_rest, ds2dt_rest ;
+var du2dt_SA_A, dv2dt_SA_A, dw2dt_SA_A, ds2dt_SA_A ;
 
 var Jfi , Jso, Jsi ;
 var xlap ;
 
-var xfi_SA, xsi_SA, xso_SA ;
-var dxd, dw ;
+var xfi_SA_A, xsi_SA_A, xso_SA_A ;
+var dxd, dw
+
 
 var SA      = new Float64Array(num_cells);
+var ATR     = new Float64Array(num_cells);
+var CT      = new Float64Array(num_cells);
 
-var d_SA    = new Float64Array(num_cells);
-var x_SA    = new Float64Array(num_cells);
+var tvp_SA_A  = new Float64Array(num_cells);
+var tvm_SA_A  = new Float64Array(num_cells);
+var tvmm_SA_A = new Float64Array(num_cells);
+var twp_SA_A  = new Float64Array(num_cells);
+var twm_SA_A  = new Float64Array(num_cells);
+var td_SA_A   = new Float64Array(num_cells);
+var uc_SA_A   = new Float64Array(num_cells);
+var uo_SA_A   = new Float64Array(num_cells);
+var to_SA_A   = new Float64Array(num_cells);
+var tsi_SA_A  = new Float64Array(num_cells);
+var k_SA_A    = new Float64Array(num_cells);
+var ucsi_SA_A = new Float64Array(num_cells);
+var uv_SA_A   = new Float64Array(num_cells);
+var um_SA_A   = new Float64Array(num_cells);
+var p_SA_A    = new Float64Array(num_cells);
+var q_SA_A    = new Float64Array(num_cells);
+var pp_SA_A   = new Float64Array(num_cells);
+var tvpn_SA_A = new Float64Array(num_cells);
+var rdm_SA_A  = new Float64Array(num_cells);
+var rdp_SA_A  = new Float64Array(num_cells);
+var taa_SA_A  = new Float64Array(num_cells);
+var pp_cond   = new Float64Array(num_cells);
 
-var tvp_SA  = new Float64Array(num_cells);
-var tvm_SA  = new Float64Array(num_cells);
-var tvmm_SA = new Float64Array(num_cells);
-var twp_SA  = new Float64Array(num_cells);
-var twm_SA  = new Float64Array(num_cells);
-var td_SA   = new Float64Array(num_cells);
-var uc_SA   = new Float64Array(num_cells);
-var uo_SA   = new Float64Array(num_cells);
-var to_SA   = new Float64Array(num_cells);
-var tsi_SA  = new Float64Array(num_cells);
-var k_SA    = new Float64Array(num_cells);
-var ucsi_SA = new Float64Array(num_cells);
-var uv_SA   = new Float64Array(num_cells);
-var um_SA   = new Float64Array(num_cells);
-var p_SA    = new Float64Array(num_cells);
-var q_SA    = new Float64Array(num_cells);
-var pp_SA   = new Float64Array(num_cells);
-var d_SA    = new Float64Array(num_cells);
-var tvpn_SA = new Float64Array(num_cells);
-var rdm_SA  = new Float64Array(num_cells);
-var rdp_SA  = new Float64Array(num_cells);
 
 /*-------------------------------------------------------------------------
  *  lookup table for hyperbolic tangent
@@ -234,13 +238,17 @@ env = {
     running      : false ,
     skip_frames  : 100 ,
     shock_time   : 600 ,
+    shock_num    : 5 ,
     solve        : function(){ env.running = !env.running ; } ,
     initialize   : initialize ,
 
     no_cells      : 50 ,  // how many empty spaces we have for cells, in cells
-    sa_node_n     : 75 , // first n cells are SA node cells
-    epicardial_n  : 40 ,  // next n cells are epicardial
-    endocardial_n : 40 ,  // last n cells are endocardial, rest are myocardial
+
+    sa_node_n     : 125 , // first n cells are SA node cells
+    atr_node_n    : 75 , // n cells after SA are the atrium
+
+    epicardial_n  : 40 ,  // next n are epicardial
+    endocardial_n : 40 ,  // last n are endocardial, myocardial in between
 
     electrode_pos : 35 ,  // cell pos of electrodes from ends of boundaries
     y_bound : 0.017 ,  // plot1  y bounds
@@ -254,8 +262,8 @@ env = {
 // model   = [epi    , endo   , M      , PB     , TNNP  ]
 uo_model   = [0      , 0      , 0      , 0      , 0     ] ;
 uu_model   = [1.55   , 1.56   , 1.61   , 1.45   , 1.58  ] ;
-//thv_model  = [0.3    , 0.3    , 0.3    , 0.35   , 0.3   ] ;
-thv_model  = [0.2    , 0.2    , 0.2    , 0.35   , 0.3   ] ;
+thv_model  = [0.3    , 0.3    , 0.3    , 0.35   , 0.3   ] ;
+//thv_model  = [0.2    , 0.2    , 0.2    , 0.35   , 0.3   ] ;
 thw_model  = [0.13   , 0.13   , 0.13   , 0.13   , 0.015 ] ;
 thvm_model = [0.006  , 0.2    , 0.1    , 0.175  , 0.015 ] ;
 tho_model  = [0.006  , 0.006  , 0.005  , 0.006  , 0.006 ] ;
@@ -284,10 +292,6 @@ wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
 
 
 
-
-
-
-
 /*------------------------------------------------------------------------
  * initialize the state variables and the state variables
  *------------------------------------------------------------------------
@@ -295,86 +299,106 @@ wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
 function initialize(){
 
 
-    // first make epicardial cells
-    var ct = 0 ; // cell type 0 is epicardial
-    //for(var i=0; i < num_cells; i++){
     for(var i=0; i < num_cells; i++){
 
         SA[i] = 0 ; // track if cell is SA node
-        if(i <= env.no_cells + env.sa_node_n && i >= env.no_cells){
+        if(i >= env.no_cells && i < env.no_cells + env.sa_node_n){
+          // left bound is "no cells". right bound is "no cells + SA node"
           SA[i] = 1; // only first n cells are SA
         }
 
-        else if(i <= env.no_cells + env.sa_node_n + env.epicardial_n && i >= env.no_cells + env.sa_node_n){ct=0;}
-        else if(i <= (num_cells - env.no_cells - env.endocardial_n)){ct=2}
-        else {ct=1}  // in between is myocardial
+        ATR[i] = 0 ; // track if cell is in the atrium
+        if(i >= env.no_cells + env.sa_node_n && i <= env.no_cells + env.sa_node_n + env.atr_node_n){
+          // left bound is "no cells + SA node". right bound is "no cells + SA node + atrium "
+          ATR[i] = 1 ;
+          // SA[i] = 1 ; debugging, set ATR cells to SA instead
+        }
 
-        //console.log(i, ct, SA[i])
+        // left bound is atrium, right bound is end of epicardial region
+        else if(i <= env.no_cells + env.sa_node_n + env.epicardial_n && i >= env.no_cells + env.sa_node_n){CT[i]=0;}
 
-        // copy values of model according to each cell's assigned celltype [ct]
-        uo  [i] = uo_model[ct] ;
-        uu  [i] = uu_model[ct] ;
-        thv [i] = thv_model[ct] ;
-        thw [i] = thw_model[ct] ;
-        thvm[i] = thvm_model[ct] ;
-        tho [i] = tho_model[ct] ;
-        tv1m[i] = tv1m_model[ct] ;
-        tv2m[i] = tv2m_model[ct] ;
-        tvp [i] = tvp_model[ct] ;
-        tw1m[i] = tw1m_model[ct] ;
-        tw2m[i] = tw2m_model[ct] ;
-        kwm [i] = kwm_model[ct] ;
-        uwm [i] = uwm_model[ct] ;
-        twp [i] = twp_model[ct] ;
-        tfi [i] = tfi_model[ct] ;
-        to1 [i] = to1_model[ct] ;
-        to2 [i] = to2_model[ct] ;
-        tso1[i] = tso1_model[ct] ;
-        tso2[i] = tso2_model[ct] ;
-        kso [i] = kso_model[ct] ;
-        uso [i] = uso_model[ct] ;
-        ts1 [i] = ts1_model[ct] ;
-        ts2 [i] = ts2_model[ct] ;
-        ks  [i] = ks_model[ct] ;
-        us  [i] = us_model[ct] ;
-        tsi [i] = tsi_model[ct] ;
-        twN [i] = twN_model[ct] ;
-        wNS [i] = wNS_model[ct] ;
+        // make the last n cells endocardial
+        else if(i <= (num_cells - env.no_cells - env.endocardial_n)){CT[i]=2}
+        else {CT[i]=1}  // in between is myocardial
 
-        /*-------------------------------------------------------------------------
-        * SA node paramaters
-        *-------------------------------------------------------------------------
+        // the final configuration is below, where ~~ represents
+        // the boundaries of the phase field. "..." represents "-cardial"
+        // <EMPTY> ~~ <SA NODE> <ATRIUM> <EPI...> <MYO...> <ENDO...> ~~ <EMPTY>
+
+
+        // copy values of model according to each cell's assigned celltype CT[i]
+        uo  [i] = uo_model[CT[i]] ;
+        uu  [i] = uu_model[CT[i]] ;
+        thv [i] = thv_model[CT[i]] ;
+        thw [i] = thw_model[CT[i]] ;
+        thvm[i] = thvm_model[CT[i]] ;
+        tho [i] = tho_model[CT[i]] ;
+        tv1m[i] = tv1m_model[CT[i]] ;
+        tv2m[i] = tv2m_model[CT[i]] ;
+        tvp [i] = tvp_model[CT[i]] ;
+        tw1m[i] = tw1m_model[CT[i]] ;
+        tw2m[i] = tw2m_model[CT[i]] ;
+        kwm [i] = kwm_model[CT[i]] ;
+        uwm [i] = uwm_model[CT[i]] ;
+        twp [i] = twp_model[CT[i]] ;
+        tfi [i] = tfi_model[CT[i]] ;
+        to1 [i] = to1_model[CT[i]] ;
+        to2 [i] = to2_model[CT[i]] ;
+        tso1[i] = tso1_model[CT[i]] ;
+        tso2[i] = tso2_model[CT[i]] ;
+        kso [i] = kso_model[CT[i]] ;
+        uso [i] = uso_model[CT[i]] ;
+        ts1 [i] = ts1_model[CT[i]] ;
+        ts2 [i] = ts2_model[CT[i]] ;
+        ks  [i] = ks_model[CT[i]] ;
+        us  [i] = us_model[CT[i]] ;
+        tsi [i] = tsi_model[CT[i]] ;
+        twN [i] = twN_model[CT[i]] ;
+        wNS [i] = wNS_model[CT[i]] ;
+
+        /*----------------------------------------------------------------------
+        * SA node and Atrium parameters
+        *-----------------------------------------------------------------------
         */
 
-        tvp_SA  [i] = 184.33 ;
-        tvm_SA  [i] = 19.3 ;
-        tvmm_SA [i] = 255  ;
+        // the idea is that an SA node will have SA = 1, ATR = 0
+        // an atrium cell will have SA = 0, ATR = 1
+        // and all other cells will have both equal to 0
 
-        twp_SA  [i] = 70.0117 ;
-        twm_SA  [i] = 153.403 ;
-        td_SA   [i] = 0.13 ;
+        tvp_SA_A  [i] = 184.33*SA[i]   + 3.33*ATR[i] ;
+        tvm_SA_A  [i] = 19.3*SA[i]     + 19.2*ATR[i] ;
+        tvmm_SA_A [i] = 255*SA[i]      + 10.0*ATR[i] ;
 
-        uc_SA   [i] = 0.14 ;
-        uo_SA   [i] = 0.0 ;
-        to_SA   [i] = 13.75 ;
+        twp_SA_A  [i] = 70.0117*SA[i]  + 160.*ATR[i] ;
+        twm_SA_A  [i] = 153.403*SA[i]  + 75.0*ATR[i] ;
+        td_SA_A   [i] = 0.13*SA[i]     + 0.065*ATR[i] ;
 
-        tsi_SA  [i] = 54.7686 ;
-        k_SA    [i] = 5.0 ;
+        uc_SA_A   [i] = 0.14*SA[i]     + 0.23*ATR[i] ;
+        uo_SA_A   [i] = 0.0 ;   // same for both
+        to_SA_A   [i] = 13.75*SA[i]    + 39.0*ATR[i] ;
 
-        ucsi_SA [i] = 0.80 ;
-        uv_SA   [i] = 0.055 ;
-        um_SA   [i] = 1.0  ;
+        tsi_SA_A  [i] = 54.7686*SA[i]  + 44.84*ATR[i] ;
+        k_SA_A    [i] = 4.0*SA[i]      + 3.00*ATR[i] ;
 
-        p_SA    [i] = 0 ;
-        q_SA    [i] = 0 ;
-        pp_SA   [i] = 0 ;
+        ucsi_SA_A [i] = 0.65*SA[i]     + 0.80*ATR[i] ;
+        uv_SA_A   [i] = 0.055 ; // same for both
+        um_SA_A   [i] = 1.0 ;   // same for both
 
-        d_SA    [i] = 0 ;
+        p_SA_A    [i] = 0 ;
+        q_SA_A    [i] = 0 ;
+        pp_SA_A   [i] = 0 ;
 
-        tvpn_SA [i] = 0 ;
+        tvpn_SA_A [i] = 0 ;
 
-        rdm_SA  [i] = 0.333321 ;
-        rdp_SA  [i] = 0.00220334 ;
+        rdm_SA_A  [i] = 0.333321 ;
+        rdp_SA_A  [i] = 0.00220334 ;
+
+        taa_SA_A  [i] = 0.009 ;
+
+        pp_cond[i] = 0.35*SA[i] + 0.3*ATR[i]
+
+
+
 
     }
 
@@ -392,6 +416,8 @@ function initialize(){
     }
 
 
+
+
 } ;
 
 
@@ -405,11 +431,28 @@ function marchTime(){
     ecg_integral1 = 0 ;
     ecg_integral2 = 0 ;
 
+    du2dt_SA_A = 0;
+    dv2dt_SA_A = 0;
+    dw2dt_SA_A = 0;
+    ds2dt_SA_A = 0;
+
+    du2dt_rest = 0;
+    dv2dt_rest = 0;
+    dw2dt_rest = 0;
+    ds2dt_rest = 0;
+
+    du2dt = 0;
+    dv2dt = 0;
+    dw2dt = 0;
+    ds2dt = 0;
+
+
     // loop over all the cells ...........................................
     for(var i=1 ; i<num_cells-1 ; i++){
         //u  = us.old ;
         //u_new = us.rec ;
-        if(phi[i] < 0.00001){ continue }
+      if(phi[i] < 0.00001){ continue }
+
 
         // Calculate phase field derivative, then laplacian
         //us.old[10];
@@ -427,6 +470,7 @@ function marchTime(){
         ecg_integral1 += laplacian[i]/(r1*r1)/dx ;
         ecg_integral2 += laplacian[i]/(r2*r2)/dx ;
 
+      if(SA[i] == 0 && ATR[i] == 0){
         // updating voltage dependent parameters .........................
         tvm[i] = (1.-H(u[i]-thvm[i]))*tv1m[i] + H(u[i]-thvm[i])*tv2m[i] ;
         twm[i] = tw1m[i] + (tw2m[i] - tw1m[i])*(1.+tanh_lookup(kwm[i]*(u[i]-uwm[i])))/2. ;
@@ -444,41 +488,79 @@ function marchTime(){
         Jsi = -H(u[i]-thw[i])*w[i]*s[i]/tsi[i] ;
 
         // Calculating Derivatives .......................................
-        du2dt_norm = -(Jfi+Jso+Jsi) ;
-        dv2dt_norm = (1.-H(u[i]-thv[i]))*(vN[i]-v[i])/tvm[i] - H(u[i]-thv[i])*v[i]/tvp[i] ;
-        dw2dt_norm = (1.-H(u[i]-thw[i]))*(wN[i] - w[i])/twm[i] - H(u[i]-thw[i])*w[i]/twp[i] ;
-        ds2dt_norm = ((1.+tanh_lookup(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
+        du2dt_rest = -(Jfi+Jso+Jsi) ;
+        dv2dt_rest = (1.-H(u[i]-thv[i]))*(vN[i]-v[i])/tvm[i] - H(u[i]-thv[i])*v[i]/tvp[i] ;
+        dw2dt_rest = (1.-H(u[i]-thw[i]))*(wN[i] - w[i])/twm[i] - H(u[i]-thw[i])*w[i]/twp[i] ;
+        ds2dt_rest = ((1.+tanh_lookup(ks[i]*(u[i]-us[i])))/2. - s[i] )/ts[i] ;
 
-        // SA terms ......................................................
+        du2dt = du2dt_rest + xlap/(dx*dx) ;
+        dv2dt = dv2dt_rest ;
+        dw2dt = dw2dt_rest ;
+        ds2dt = ds2dt_rest ;
 
-        p_SA[i]  = 0 ;
-        q_SA[i]  = 0 ;
-        pp_SA[i] = 0 ;
+      } else {
+        // SA & Aterms ..................................................
 
-        if(u[i] > 0.35) { pp_SA[i] = 1 ; }
-        if(u[i] > uc_SA[i]) { p_SA[i] = 1 ; }
-        if(u[i] > uv_SA[i]) { q_SA[i] = 1 ; }
 
-        tvpn_SA[i] = (1-pp_SA[i])*184 + pp_SA[i]*10 ;
+        // ternary operator: if(condition) --> pick value 'TRUE' : 'FALSE' ;
+        (u[i] > uc_SA_A[i]) ?  p_SA_A[i] = 1 : p_SA_A[i] = 0 ;
+        (u[i] > uv_SA_A[i]) ?  q_SA_A[i] = 1 : q_SA_A[i] = 0 ;
+        (u[i] > pp_cond[i]) ? pp_SA_A[i] = 1 : pp_SA_A[i] = 0 ;
 
-        dxd = (0.5*(1.0 + tanh_lookup((u[i]-0.65)*4))-d_SA[i])*(rdp_SA[i]*p_SA[i] + rdm_SA[i]*(1-p_SA[i])) ;
-        d_SA[i] += dt*dxd ;
+        tvpn_SA_A[i] = (1-pp_SA_A[i])*184 + pp_SA_A[i]*10 ;
 
-        // calculating currents
-        xfi_SA = -v[i]*p_SA[i]*(u[i]-uc_SA[i])*(um_SA[i]-u[i])/((1-pp_SA[i])*6+pp_SA[i]*.1) ;
-        xso_SA = (u[i]-uo_SA[i])**.4*(1-p_SA[i])/34.17 + p_SA[i]*(.012+.036*(1+tanh_lookup((u[i]-.90)/.10))/2) ;
-        xsi_SA = -w[i]*(d_SA[i]**.5)/(tsi_SA[i]*0.170) ;
+        // calculating the 3 currents, xfi, xso, xsi
 
-        // Calculating Derivatives
-        du2dt_SA = -(xfi_SA + xso_SA + xsi_SA) ;
-        dv2dt_SA = (1-p_SA[i])*(1-v[i])/((1-q_SA[i])*tvm_SA[i] + tvmm_SA[i]*q_SA[i]) - p_SA[i]*v[i]/tvpn_SA[i] ;
-        dw2dt_SA  = (1-p_SA[i])*(1-w[i])/twm_SA[i] - p_SA[i]*w[i]/twp_SA[i] ;
+        // --xfi term, the denominator depends if it is SA or ATR
+        xfi_SA_A = -v[i]*p_SA_A[i]*(u[i]-uc_SA_A[i])*(um_SA_A[i]-u[i]) ;
+        xfi_SA_A /= ((1-pp_SA_A[i])*6+pp_SA_A[i]*.1)*SA[i] + td_SA_A[i]*ATR[i] +(1-SA[i]-ATR[i]) ; // extra term to avoid divide by 0
 
-        // finalizing derivatives between models
-        du2dt = du2dt_norm*(1-SA[i]) + du2dt_SA*SA[i] + xlap/(dx*dx) ;
-        dv2dt = dv2dt_norm*(1-SA[i]) + dv2dt_SA*SA[i] ;
-        dw2dt = dw2dt_norm*(1-SA[i]) + dw2dt_SA*SA[i] ;
-        ds2dt = ds2dt_norm ; //  not sure if 'd' is same as 's'
+        // --xso term, completely different for SA and ATR cells
+        // SA term for xso, this term is 0 if SA = 0
+        xso_SA_A = ((u[i]-uo_SA_A[i])**.4*(1-p_SA_A[i])/34.17 + p_SA_A[i]*(.012+.036*(1+tanh_lookup((u[i]-.90)/.10))/2))*SA[i] ;
+        // ATR term for xso, this term is 0 if ATR = 0
+        xso_SA_A += ((u[i]-uo_SA_A[i])*(1.0-pp_SA_A[i])/to_SA_A[i] + pp_SA_A[i]*taa_SA_A[i] + (0.115-taa_SA_A[i])*(1.0+tanh_lookup((u[i]-0.84)/0.020))*0.5)*ATR[i] ;
+
+        // --xsi term, very different for SA and A cells
+        xsi_SA_A = (-w[i]*(s[i]**.5)/(tsi_SA_A[i]*0.170))*SA[i] ;
+        xsi_SA_A += (-w[i]*s[i]/(tsi_SA_A[i]*0.710))*ATR[i] ;
+
+        // Calculating SA & A derivatives for all 4 variables U, V, W, S
+        du2dt_SA_A = -(xfi_SA_A + xso_SA_A + xsi_SA_A) ;
+
+        dv2dt_SA_A = (1-p_SA_A[i])*(1-v[i])/((1-q_SA_A[i])*tvm_SA_A[i] + tvmm_SA_A[i]*q_SA_A[i]) - p_SA_A[i]*v[i]/(tvpn_SA_A[i]*SA[i] + tvp_SA_A[i]*ATR[i]) ;
+
+        dw2dt_SA_A = (1-p_SA_A[i])*(1-w[i])/twm_SA_A[i] - p_SA_A[i]*w[i]/twp_SA_A[i] ;
+
+        ds2dt_SA_A = (0.5*(1.0 + tanh_lookup((u[i]-ucsi_SA_A[i])*k_SA_A[i]))-s[i]) ;
+
+        // extra term for ds2dt_SA_A
+        // if u >= uc, then multiply by rdp
+        // if u <= uc, then multiply by rdm
+        // rdp and rdm are identical for the atrium and sa node
+
+        // --the if statement about ~15 lines above did this
+        // --and it was saved in the variable "p_SA_A"
+        ds2dt_SA_A  *= (rdp_SA_A[i]*p_SA_A[i] + rdm_SA_A[i]*(1-p_SA_A[i])) ;
+
+        du2dt = du2dt_SA_A + xlap/(dx*dx) ;
+        dv2dt = dv2dt_SA_A ;
+        dw2dt = dw2dt_SA_A ;
+        ds2dt = ds2dt_SA_A ;
+
+      } //end SA & A calculations
+
+        // picking derivatives between SA cells, A cells, and the rest
+        // --SA and ATR cannot both be 1, but they can both be 0
+        // --if SA and ATR are both 0, then the cell is epi/endo/myocardial
+        // --if SA is 1, ATR is 0 and the cell is part of the SA node
+        // --if SA is 0, ATR is 1 and the cell is part of the atrium
+/*
+        du2dt = du2dt_rest*(1-SA[i]-ATR[i]) + du2dt_SA_A*(SA[i]+ATR[i]) + xlap/(dx*dx) ;
+        dv2dt = dv2dt_rest*(1-SA[i]-ATR[i]) + dv2dt_SA_A*(SA[i]+ATR[i]) ;
+        dw2dt = dw2dt_rest*(1-SA[i]-ATR[i]) + dw2dt_SA_A*(SA[i]+ATR[i]) ;
+        ds2dt = ds2dt_rest*(1-SA[i]-ATR[i]) + ds2dt_SA_A*(SA[i]+ATR[i]) ;
+*/
 
         // time integration ..............................................
         u_new[i] = u[i] + du2dt*dt ;
@@ -587,6 +669,38 @@ plt3.ylabel = 'Membrane Voltage' ;
 plt3.init() ;
 
 /*-------------------------------------------------------------------------
+* Plot Four: Time vs Gates
+*-------------------------------------------------------------------------
+*/
+
+var plt4 = new Plot(cnvs4) ;
+
+plt4.grid = 'on' ;
+
+plt4.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
+plt4.ylimits = [0, 1] ; 		        // voltage axis [mV]
+
+// ticks
+plt4.xticks.precision = 0 ;
+plt4.yticks.precision = 2 ;
+
+plt4.xticks.noDivs = 5 ;
+plt4.yticks.noDivs = 5 ;
+
+plt4.legend.visible = true ;
+plt4.legend.location = [c1.width-100, 30]
+
+// font settings
+plt4.borders = 'on' ;
+plt4.margins.left = 80 ;
+
+plt4.xlabel = 'Time' ;
+plt4.ylabel = 'Gates' ;
+
+// begin the PLOT
+plt4.init() ;
+
+/*-------------------------------------------------------------------------
  * special data plotting
  *-------------------------------------------------------------------------
  */
@@ -616,12 +730,20 @@ lapl_curve.color = 'Green' ;
 
 var tissue_voltage_curve = plt3.addCurveFromArrays() ;
 tissue_voltage_curve.color = 'Orange' ;
+var phi_curve = plt3.addCurveFromArrays() ;
+phi_curve.color = 'Red' ;
 
-
-var electrode_1 = plt3.addCurveFromPoints() ;
-var electrode_2 = plt3.addCurveFromPoints() ;
+var electrode_1 = plt3.addCurveFromArrays() ;
+var electrode_2 = plt3.addCurveFromArrays() ;
 electrode_1.color = 'Red' ;
 electrode_2.color = 'Red' ;
+
+var v_curve = plt4.addCurveFromPoints() ;
+v_curve.name = "v" ;
+var w_curve = plt4.addCurveFromPoints() ;
+w_curve.name = "w" ;
+var s_curve = plt4.addCurveFromPoints() ;
+s_curve.name = "s" ;
 
 
 
@@ -640,9 +762,11 @@ function display(){
       // shift x axes to the right by env.pltTime amount and reset
       plt1.xlimits = [plt1.xlimits[0]+plt_xmax, plt1.xlimits[1]+plt_xmax] ;
       plt2.xlimits = [plt2.xlimits[0]+plt_xmax, plt2.xlimits[1]+plt_xmax] ;
+      plt4.xlimits = [plt4.xlimits[0]+plt_xmax, plt4.xlimits[1]+plt_xmax] ;
 
       plt1.reset() ;
       plt2.reset() ;
+      plt4.reset()
 
       plt1.ylimits = [-env.y_bound, env.y_bound] ; 		// voltage axis [mV]
 
@@ -651,6 +775,8 @@ function display(){
 
   //~~~~~~~~~~~~~~~~~~ plot 1  (tissue voltage)
   tissue_voltage_curve.plot(x, u) ;
+  // phi_curve.plot(x, phi) ; // uncomment to show phase field
+
 
   //~~~~~~~~~~~~~~~~~~ plot 2 (rainbow voltage wave)
 
@@ -695,9 +821,12 @@ function display(){
 
   lapl_curve.draw(env.time, ecg_integral) ;
 
+  electrode_1.draw([env.electrode_pos*dx,env.electrode_pos*dx] , [-0.2,2]) ;
+  electrode_2.draw([(num_cells - env.electrode_pos)*dx,(num_cells - env.electrode_pos)*dx], [-0.2,2]) ;
 
-  electrode_1.draw(env.electrode_pos*dx, 1) ;
-  electrode_2.draw((num_cells - env.electrode_pos)*dx, 1) ;
+  v_curve.draw(env.time, v[env.electrode_pos]) ;
+  w_curve.draw(env.time, w[env.electrode_pos]) ;
+  s_curve.draw(env.time, s[env.electrode_pos]) ;
 
 }
 

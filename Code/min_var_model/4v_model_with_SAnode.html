@@ -33,7 +33,7 @@ var cnvs3 = document.getElementById('c3') ;
 "use strict";
 
 // sim variables
-var dt        =  0.05    ;    // time differential
+var dt        =  0.1    ;    // time differential
 
 // tissue variables
 var diffCoef         =  1.e-3   ;    // 1.171 +- 0.221 cm^2/s
@@ -238,7 +238,7 @@ env = {
     initialize   : initialize ,
 
     no_cells      : 50 ,  // how many empty spaces we have for cells, in cells
-    sa_node_n     : 75 , // first n cells are SA node cells
+    sa_node_n     : 75 ,   // first n cells are SA node cells
     epicardial_n  : 40 ,  // next n cells are epicardial
     endocardial_n : 40 ,  // last n cells are endocardial, rest are myocardial
 
@@ -375,6 +375,8 @@ function initialize(){
 
         rdm_SA  [i] = 0.333321 ;
         rdp_SA  [i] = 0.00220334 ;
+
+        pp_condition = 0.35 ;
 
     }
 
@@ -618,8 +620,8 @@ var tissue_voltage_curve = plt3.addCurveFromArrays() ;
 tissue_voltage_curve.color = 'Orange' ;
 
 
-var electrode_1 = plt3.addCurveFromPoints() ;
-var electrode_2 = plt3.addCurveFromPoints() ;
+var electrode_1 = plt3.addCurveFromArrays() ;
+var electrode_2 = plt3.addCurveFromArrays() ;
 electrode_1.color = 'Red' ;
 electrode_2.color = 'Red' ;
 
@@ -685,10 +687,10 @@ function display(){
 */
 
 
-  ecg_integral = (ecg_integral2 + ecg_integral1) ;
+  ecg_integral = (ecg_integral1 - ecg_integral2) ;
 
   if(ecg_integral >= env.y_bound){
-    ecg_integral = env.y_bound - 0.001;
+    ecg_integral = env.y_bound - 0.001 ;
   } else if (ecg_integral <= -env.y_bound) {
     ecg_integral = -(env.y_bound - 0.001) ;
   }
@@ -696,8 +698,8 @@ function display(){
   lapl_curve.draw(env.time, ecg_integral) ;
 
 
-  electrode_1.draw(env.electrode_pos*dx, 1) ;
-  electrode_2.draw((num_cells - env.electrode_pos)*dx, 1) ;
+  electrode_1.draw([env.electrode_pos*dx,env.electrode_pos*dx] , [-0.2,2]) ;
+  electrode_2.draw([(num_cells - env.electrode_pos)*dx,(num_cells - env.electrode_pos)*dx], [-0.2,2]) ;
 
 }
 

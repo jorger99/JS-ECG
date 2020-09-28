@@ -6,11 +6,11 @@
     <center> <h1> Minimal Model SA Node - Single Cell </h1> </center>
 
     <body> <center>
-      <canvas id="c3" width="512" height="300" style="border:1px solid #000000;">
+      <canvas id="c1" width="512" height="300" style="border:1px solid #000000;">
         Your browser does not support the HTML5 canvas tag.</canvas> <br>
-    	<canvas id="c1" width="512" height="300" style="border:1px solid #000000;">
-    	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
     	<canvas id="c2" width="512" height="300" style="border:1px solid #000000;">
+    	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
+    	<canvas id="c3" width="512" height="300" style="border:1px solid #000000;">
     	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
 
     </center> </body>
@@ -33,8 +33,11 @@ var cnvs3 = document.getElementById('c3') ;
 'use strict';
 
 // sim variables
-var dt        =  0.1    ;    // time differential
-var dx        =  0.025   ;    // width of cell
+var dt    =  0.05  ;    // time differential
+var dx    =  0.025 ;    // width of cell
+var diff  = 0.001  ;
+
+var ddt_o_dx2 = dt*diff/(dx*dx) ;
 
 
 // state variables
@@ -47,25 +50,46 @@ var x = 0 ;
 
 
 // ~~~~~ model parameters
-var tvp  = 184.33 ;
-var tvm  = 19.3 ;
-var tvmm = 255  ;
+var tvp   = 3.33  ;
+var tvm   = 19.2  ;
+var tvmm  = 10.0  ;
 
-var twp  = 70.0117 ;
-var twm  = 153.403 ;
-var td   = 0.13 ;
+var twp   = 160.0 ;
+var twm   = 75.0  ;
+var td    = 0.17  ;
 
-var uc   = 0.14 ;
-var uo   = 0.0 ;
-var to   = 13.75 ;
+var uc    = 0.25  ;
+var uo    = 0.0   ;
+var to    = 55.0  ;
 
-var tsi  = 54.7686 ;
-var k    = 5.0 ;
+var tsi   = 44.84 ;
+var k     = 3.0   ;
 
-var ucsi = 0.65 ;
-var uv   = 0.055 ;
-var um   = 1.0  ;
+var ucsi  = 0.8   ;
+var uv    = 0.055 ;
+var um    = 1.05  ;
 
+var atvp  = 3.33  ;
+var atvm  = 19.2  ;
+var atvmm = 10.0  ;
+
+var atwp  = 160.0 ;
+var atwm  = 75.0  ;
+var atd   = 0.065 ;
+
+var auc   = 0.23  ;
+var auo   = 0.0   ;
+var ato   = 39.0  ;
+
+var atsi  = 44.84 ;
+var ak    = 3.0   ;
+
+var aucsi = 0.8   ;
+var auv   = 0.055 ;
+var aum   = 1.0   ;
+
+
+// ~~~~~ calculation parameters
 var p    = 0 ;
 var q    = 0 ;
 var pp   = 0 ;
@@ -78,11 +102,14 @@ var xfi  = 0 ;
 var xso  = 0 ;
 var xsi  = 0 ;
 
-var rdm  = 0.333321 ;
-var rdp  = 0.00220334 ;
+var rdm  = 1.2  ;
+var rdp  = 0.02 ;
+
+var ardm = 1.2  ;
+var ardp = 0.02 ;
 
 var dv, dw, dxd ;
-var tr  ;
+var tr, jexter  ;
 
 /*-------------------------------------------------------------------------
  *  lookup table for hyperbolic tangent
@@ -138,10 +165,12 @@ function initialize(){
     // initialize the state variables .....................................
 
     x = (i+0.5)*dx ;
-    u = 0.00 ;
-    v = 0.55 ;
-    w = 0.20 ;
-    d = 0 ;
+    u = 0.0 ;
+    v = 1.0 ;
+    w = 1.0 ;
+    d = 0.0 ;
+
+
 
 } ;
 
@@ -152,19 +181,28 @@ function initialize(){
  */
 function marchTime(){
 
+  // add an external current iff it's the correct time
+  jexter = 0
+  if((env.time<0.5 || Math.round(env.time)%env.shock_time == 0)){
+    console.log(env.time, "applying shock") ;
+    // jexter = 0.22 ;
+    u = 0.5 ;
+  }
+
+
+    // PULMONARY VEINS
+/*
     p  = 0 ;
     q  = 0 ;
     pp = 0 ;
 
-    if(u > 0.35) { pp = 1 ; }
+    if(u > 0.6) { pp = 1 ; }
     if(u > uc)   { p = 1 ; }
     if(u > uv)   { q = 1 ; }
 
-    tvpn = (1-pp)*184 + pp*10 ;
-
-    dv  = (1-p)*(1-v)/((1-q)*tvm + tvmm*q) - p*v/tvpn ;
+    dv  = (1-p)*(1-v)/((1-q)*tvm + tvmm*q) - p*v/tvp ;
     dw  = (1-p)*(1-w)/twm - p*w/twp ;
-    dxd = (0.5*(1.0 + tanh_lookup((u-ucsi)*4))-d) ;
+    dxd = (0.5*(1.0 + tanh_lookup((u-ucsi)*k))-d) ;
 
     if(u >= uc) {
       dxd=dxd*rdp ;
@@ -176,11 +214,57 @@ function marchTime(){
     w += dt*dw ;
     d += dt*dxd ;
 
-    xfi = -v*p*(u-uc)*(um-u)/((1-pp)*6+pp*.1) ;
-    xso = (u-uo)**.4*(1-p)/34.17 + p*(.012+.036*(1+tanh_lookup((u-.90)/.10))/2) ;
-    xsi = -w*(d**.5)/(tsi*0.170) ;
 
-    u += -(xfi+xso+xsi)*dt ;
+    taa = 0.09 ;
+
+    if(u >= 0.35) {
+      too = to ;
+    } else {
+      if(u >= 0.28 && u <= 0.35) {
+        too = to*(u*(-17.1428)+7.0);
+      } else {
+        too = to*2.2 ;
+      }
+    }
+
+    xfi = -v*p*(u-uc)*(um-u)/td ;
+    xso = (u-0.14)*(1-pp)/too + pp*taa + (0.025-taa)*(1.0+tanh_lookup((u-0.90)/0.070))*0.5 ;
+    xsi = -w*d/(tsi*1.06) ;
+
+*/
+
+    // LEFT ATRIUM
+
+    p = 0.0  ;
+    q = 0.0  ;
+    pp = 0.0 ;
+
+    if(u > 0.3) { pp = 1.0 ; }
+    if(u > auc)  { p = 1.0 ; }
+    if(u > auv)  { q = 1.0 ; }
+
+    dv = (1.0-p)*(1.0-v)/((1.0-q)*atvm + atvmm*q)-p*v/atvp ;
+    dw = (1.0-p)*(1.0-w)/atwm - p*w/atwp ;
+    dxd = (0.5*(1.0+tanh_lookup((u-aucsi)*ak))-d) ;
+
+    if(u >= auc) {
+      dxd = dxd*ardp ;
+    } else {
+      dxd = dxd*ardm ;
+    }
+
+    v += dt*dv ;
+    w += dt*dw ;
+    d += dt*dxd ;
+
+    taa = 0.009 ;
+
+    xfi = -v*p*(u-auc)*(aum-u)/atd ;
+    xso = (u-uo)*(1.0-pp)/ato + pp*taa + (0.115-taa)*(1.0+tanh_lookup((u-0.84)/0.020))*0.5 ;
+    xsi = -w*d/(atsi*0.710) ;
+
+
+    u += -(xfi+xso+xsi-jexter)*dt ;
 
     return ;
 }
@@ -201,7 +285,7 @@ plt1.xticks.precision = 0 ;
 plt1.yticks.precision = 3 ;
 
 plt1.xticks.noDivs = 5 ;
-plt1.yticks.noDivs = 6 ;
+plt1.yticks.noDivs = 9 ;
 
 // font settings
 plt1.borders = 'on' ;
@@ -231,7 +315,7 @@ plt2.xticks.precision = 0 ;
 plt2.yticks.precision = 3 ;
 
 plt2.xticks.noDivs = 5 ;
-plt2.yticks.noDivs = 6 ;
+plt2.yticks.noDivs = 5 ;
 
 // font settings
 plt2.borders = 'on' ;
@@ -260,7 +344,7 @@ plt3.xticks.precision = 0 ;
 plt3.yticks.precision = 3 ;
 
 plt3.xticks.noDivs = 5 ;
-plt3.yticks.noDivs = 6 ;
+plt3.yticks.noDivs = 9 ;
 
 // font settings
 plt3.borders = 'on' ;
@@ -279,13 +363,13 @@ plt3.init()
 var plt_xmax = 1200 ;
 
 plt1.xlimits = [0, plt_xmax] ;
-plt1.ylimits = [-0.1, 0.1] ;        // voltage plot
+plt1.ylimits = [-0.2, 0.2] ;        // indiv  currents plot
 
 plt2.xlimits = [0, plt_xmax] ;
 plt2.ylimits = [0, 1] ;         // gates
 
 plt3.xlimits = [0, plt_xmax] ;
-plt3.ylimits = [-0.02, 0.02] ;         // gates
+plt3.ylimits = [-2, 0.2] ;         // sum currents
 
 var xfi_curve = plt1.addCurveFromPoints() ;
 xfi_curve.name = 'xfi' ;
@@ -341,6 +425,7 @@ function display(){
   w_curve.plot(env.time, w) ;
 
   //~~~~~~~~~~~~~~~~~~ plot 3 (ecg)
+  // console.log(xfi, xso, xsi)
   ecg_curve.plot(env.time, xfi+xso+xsi) ;
 
 }
