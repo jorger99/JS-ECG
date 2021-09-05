@@ -1,4 +1,4 @@
-# GT_modeling_electrophysiology
+# JS-ECG
 Virtual REU with Flavio Fenton and Abouzar Kaboudian from Georgia Tech. Research will focus on the modeling of ion channels in electrophysiology in order to better understand and create simulation models of an electocardiograph
 
 ### AbubuJS
