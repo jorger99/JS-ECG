@@ -45,7 +45,6 @@ var num_cells    =  700    ;    // number of cells on cable
 var dx           =  0.025   ;    // width of cell
 
 // create array and var to hold laplacian values for ECG calculations
-var sum_laplacian = 0 ;
 var laplacian     = new Float64Array(num_cells) ;
 
 var ecg_integral1 = 0 ;
@@ -298,33 +297,67 @@ wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
  */
 function initialize(){
 
+// in this massive for loop , we initialize the tissue cell-by-cell and
+// assign them a parameter based on what kind of cell they are.
+
+// the SA & Atr cells have their own calculations, so if a cell is part of that
+// then the i-th cell will be identified by either SA[i] or ATR[i] = 1
+
+// If the cell is not in the SA or ATR, then it is a epicardial, myocardial,
+// or endocardial cell. The code will check the i-th cell in the CT[] array
+//   CT[i] -> 0: EPICARDIAL
+//             1: MYOCARDIAL
+//              2: ENDOCARDIAL
 
     for(var i=0; i < num_cells; i++){
 
+        // the final configuration is
+        // <EMPTY> ~~ <SA NODE> <ATRIUM> <EPI...> <MYO...> <ENDO...> ~~ <EMPTY>
+
+        // first start with the <EPI> <MYO> <ENDO> cells
+
+        // use the CT[i] array to let the code know what kind of cell "i" is
+        //   CT[i] -> 0: EPICARDIAL
+        //              2: MYOCARDIAL
+        //               1: ENDOCARDIAL
+
+        if(i >= env.no_cells + env.sa_node_n + env.atr_node_n + env.epicardial_n)
+          {CT[i]=1;} // apply endocardial to the right half
+
+        if(i <= (num_cells - env.no_cells - env.endocardial_n))
+          {CT[i]=2} // apply myocardial to the entire left half, but not endo
+
+        if(i >= env.no_cells + env.sa_node_n + env.atr_node_n && i <= env.no_cells + env.sa_node_n + env.atr_node_n + env.epicardial_n )
+          {CT[i]=0;} // apply epicardial to the very specific region
+
+        // the way this is implemented is that the number of epi & endo cells
+        // are specified in the env variable, but in order to correctly identify
+        // the CT[i] value, we have to do broad sweeps over all the cells
+        // and then let each consecutive if statement override the previous cell
+
+        // if you REALLY want to know how those if statements work, then
+        // throw the conditions into the console and you'll see how they add up
+
+
         SA[i] = 0 ; // track if cell is SA node
-        if(i >= env.no_cells && i < env.no_cells + env.sa_node_n){
+        if(i <= env.no_cells + env.sa_node_n){
           // left bound is "no cells". right bound is "no cells + SA node"
           SA[i] = 1; // only first n cells are SA
+          CT[i] = -1;
         }
 
         ATR[i] = 0 ; // track if cell is in the atrium
-        if(i >= env.no_cells + env.sa_node_n && i <= env.no_cells + env.sa_node_n + env.atr_node_n){
+        if(i > env.no_cells + env.sa_node_n && i <= env.no_cells + env.sa_node_n + env.atr_node_n){
           // left bound is "no cells + SA node". right bound is "no cells + SA node + atrium "
           ATR[i] = 1 ;
-          // SA[i] = 1 ; debugging, set ATR cells to SA instead
+          CT[i] = -1;
         }
 
-        // left bound is atrium, right bound is end of epicardial region
-        else if(i <= env.no_cells + env.sa_node_n + env.epicardial_n && i >= env.no_cells + env.sa_node_n){CT[i]=0;}
+        // TESTING:
+        // SA & ATR nodes should have [-1 1 0] for SA, [-1 0 1] for ATR
+        // Epi, Myo, Endo should have [0 0 0], [0, 2, 1], [0, 1, 2] respectively
 
-        // make the last n cells endocardial
-        else if(i <= (num_cells - env.no_cells - env.endocardial_n)){CT[i]=2}
-        else {CT[i]=1}  // in between is myocardial
-
-        // the final configuration is below, where ~~ represents
-        // the boundaries of the phase field. "..." represents "-cardial"
-        // <EMPTY> ~~ <SA NODE> <ATRIUM> <EPI...> <MYO...> <ENDO...> ~~ <EMPTY>
-
+        console.log(CT[i], SA[i], ATR[i])
 
         // copy values of model according to each cell's assigned celltype CT[i]
         uo  [i] = uo_model[CT[i]] ;
@@ -464,11 +497,11 @@ function marchTime(){
         laplacian[i] = xlap*phi[i] ;
 
         // sum integral across entire tissue
-
         r1 = Math.sqrt((x[i]-env.electrode_pos*dx)*(x[i]-env.electrode_pos*dx) + 1*dx*dx) ;
         r2 = Math.sqrt((x[i]-(num_cells-env.electrode_pos)*dx)*(x[i]-(num_cells-env.electrode_pos)*dx)) ;
-        ecg_integral1 += laplacian[i]/(r1*r1)/dx ;
-        ecg_integral2 += laplacian[i]/(r2*r2)/dx ;
+
+        ecg_integral1 += laplacian[i]/(r1)/dx ;
+        ecg_integral2 += laplacian[i]/(r2)/dx ;
 
       if(SA[i] == 0 && ATR[i] == 0){
         // updating voltage dependent parameters .........................
@@ -499,7 +532,7 @@ function marchTime(){
         ds2dt = ds2dt_rest ;
 
       } else {
-        // SA & Aterms ..................................................
+        // SA & ATR terms ..................................................
 
 
         // ternary operator: if(condition) --> pick value 'TRUE' : 'FALSE' ;
@@ -586,11 +619,11 @@ function marchTime(){
  *-------------------------------------------------------------------------
  */
 
+var plt_xmax = 1400 ; // used for plots 1,2,4
+var plt_y_bound = 0.007
+
 // initialize plot settings
 var plt1 = new Plot(cnvs1) ;
-var plt_xmax = 1000 ;
-var plt_y_bound = 0.017
-
 plt1.grid = 'on' ;
 
 plt1.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
@@ -622,6 +655,8 @@ var plt2 = new Plot(cnvs2) ;
 
 plt2.grid = 'on' ;
 
+plt2.xlimits = [0, plt_xmax] ;   // length axis    [m]
+plt2.ylimits = [0, 5.5] ;
 
 // ticks
 plt2.xticks.precision = 0 ;
@@ -713,16 +748,45 @@ var num_lines = 50 ;          // how many cells we want to plot
 var line_array = [] ;
 
 var cell_frac = Math.round((num_cells-env.no_cells)/num_lines) ;
+var cell_num = 0 // placeholder
 
 for(i=0; i < num_lines; i++){
   var curve = plt2.addCurveFromPoints() ;
   curve.color = "#00000030" ;  // RGBA (red green blue alpha)
+
+  cell_num = (cell_frac * i)+env.no_cells
+  // figure out what kind of cell this is by copying the logic from line 300ish
+
+  // i.e. copy the boolean logic for SA[i], ATR[i] for SA & Atrium,
+  //      and CT[i] for epi/myo/endo - cardial cells
+  // from lines 300-360ish
+
+  // CT[i]=1
+  if(cell_num >= env.no_cells + env.sa_node_n + env.atr_node_n + env.epicardial_n)
+  { curve.color = "#FFA00090" ; }  // endocardial is yellow #FFD300
+
+  // CT[i]=2
+  if(cell_num <= (num_cells - env.no_cells - env.endocardial_n))
+  { curve.color = "#FF5B0070" ; }  // myocardial is orange #FF5B00
+
+  // CT[i]=0
+  if(cell_num >= env.no_cells + env.sa_node_n + env.atr_node_n && cell_num <= env.no_cells + env.sa_node_n + env.atr_node_n + env.epicardial_n )
+    { curve.color = "#FF000050" ; }  // epicardial is red #FF0000
+
+  // SA[i]=1
+  if(cell_num <= env.no_cells + env.sa_node_n)
+    { curve.color = "#0000FF50" ; }  // SA node is blue #0000FF
+
+  // ATR[i]=1
+  if(cell_num > env.no_cells + env.sa_node_n && cell_num <= env.no_cells + env.sa_node_n + env.atr_node_n)
+    { curve.color = "#00FF0050" ; }  // ATR node is green #00FF00
+
+  console.log(CT[cell_num], SA[cell_num], ATR[cell_num])
+
   line_array.push(curve) ;
 
 }
 
-plt2.xlimits = [0, plt_xmax] ;   // length axis    [m]
-plt2.ylimits = [0, 5.5] ;
 
 
 var lapl_curve = plt1.addCurveFromPoints() ;
@@ -754,7 +818,10 @@ s_curve.name = "s" ;
 
 function display(){
 
-  // shift x axis to right as time goes on, only plots 2 & 4
+/* this chunk of code will make the plots empty themselves once the line reaches
+ * the end of the axis
+*/
+// shift x axis to right as time goes on, only plots 2 & 4
   if(env.pltTime>plt_xmax){
       // reset value of env.pltTime
       env.pltTime-=plt_xmax ;
@@ -772,6 +839,20 @@ function display(){
 
 
   }
+
+
+/*
+// shift x axes to the right by env.pltTime amount and reset
+plt1.xlimits = [env.time-900, env.time+1000] ;
+plt2.xlimits = [env.time-900, env.time] ;
+plt4.xlimits = [env.time-900, env.time] ;
+
+plt1.reset() ;
+plt2.reset() ;
+plt4.reset() ;
+
+plt1.ylimits = [-env.y_bound, env.y_bound] ; 		// voltage axis [mV]
+*/
 
   //~~~~~~~~~~~~~~~~~~ plot 1  (tissue voltage)
   tissue_voltage_curve.plot(x, u) ;
@@ -811,7 +892,7 @@ function display(){
 */
 
 
-  ecg_integral = (ecg_integral2 + ecg_integral1) ;
+  ecg_integral = (ecg_integral2 - ecg_integral1) ;
 
   if(ecg_integral >= env.y_bound){
     ecg_integral = env.y_bound - 0.001;
@@ -838,6 +919,17 @@ function display(){
  */
 
 
+ function run(){
+     if(env.running){
+         for(var i=0 ; i < env.skip_frames ; i++){
+             marchTime() ;
+             env.time += dt ;
+             env.pltTime += dt ;
+         }
+       display() ;
+     }
+     requestAnimationFrame(run) ;
+ } ;
 
 function create_gui(){
     var gui = new Abubu.Gui() ;
@@ -854,25 +946,15 @@ function create_gui(){
     pnl.add( env, 'time').listen();
 } ;
 
-function run(){
-    if(env.running){
-        for(var i=0 ; i < env.skip_frames ; i++){
-            marchTime() ;
-            env.time += dt ;
-            env.pltTime += dt ;
-        }
-      display() ;
-    }
-    requestAnimationFrame(run) ;
-} ;
+
+console.time("Initialize") ;
+initialize() ;
+console.timeEnd("Initialize") ;
 
 console.time("GUI") ;
 create_gui() ;
 console.timeEnd("GUI") ;
 
-console.time("Initialize") ;
-initialize() ;
-console.timeEnd("Initialize") ;
 
 run() ;
 
