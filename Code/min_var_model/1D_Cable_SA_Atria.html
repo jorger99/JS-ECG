@@ -3,8 +3,17 @@
 <script src='https://abubujs.org/libs/Abubu.latest.js'></script>
 
 <html>
-    <center> <h1> Numerical Analysis of Minimal Model (4 variable model)</h1> </center>
+    <p>
+      <center> <h1> Numerical Analysis of Minimal Model (4 variable model)</h1> </center>
+      <center>
+        Click "Update_Param" every time you adjust a variable or modify a constant.
+      </center>
 
+      <center>
+        If the lines are outside the bounds, wait a few cycles for the bounds to catch up.
+      </center>
+
+    </p>
     <body> <center>
       <canvas id="c1" width="512" height="220" style="border:1px solid #000000;">
         Your browser does not support the HTML5 canvas tag.</canvas> <br>
@@ -232,26 +241,30 @@ function H(inp){
  *-------------------------------------------------------------------------
  */
 env = {
-    time         : 0  ,
-    pltTime      : 0  ,
-    running      : false ,
-    skip_frames  : 100 ,
-    shock_time   : 600 ,
-    shock_num    : 5 ,
-    solve        : function(){ env.running = !env.running ; } ,
-    initialize   : initialize ,
+    time          : 0  ,
+    pltTime       : 0  ,
+    running       : false ,
+    skip_frames   : 100 ,
+
+    solve         : function(){ env.running = !env.running ; } ,
+    initialize    : initialize ,
 
     no_cells      : 50 ,  // how many empty spaces we have for cells, in cells
 
     sa_node_n     : 61 , // first n cells are SA node cells
     atr_node_n    : 75 , // n cells after SA are the atrium
-
     epicardial_n  : 66 ,  // next n are epicardial
     endocardial_n : 11 ,  // last n are endocardial, myocardial in between
 
+    show_elctrde  : false , // should we show red lines on plt3?
     electrode_pos : 44 ,  // cell pos of electrodes from ends of boundaries
-    ECG_y_max : 0.017  ,   // plot1  y bounds
-    ECG_y_min : -0.002 ,
+
+    ECG_y_max     : 0.017  ,   // plot1  y upper bound
+    ECG_y_min     : -0.002 ,   // plot1  y lower bound
+
+    Pacing        : 1 ,  // 1 : use SA node as source,  2 : use boundary source
+    Pace_Freq     : 400,  // hz pacing of boundary source
+    Pace_Ampl     : 1,   // v amplitude of boundary source
 } ;
 
 /*-------------------------------------------------------------------------
@@ -298,6 +311,12 @@ wNS_model  = [0.94   , 0.78   , 0.5    , 0.9    , 0.94  ] ;
  */
 function initialize(){
 
+display() ;
+
+plt1.reset() ;
+plt2.reset() ;
+plt4.reset() ;
+
 // in this massive for loop , we initialize the tissue cell-by-cell and
 // assign them a parameter based on what kind of cell they are.
 
@@ -341,7 +360,7 @@ function initialize(){
 
 
         SA[i] = 0 ; // track if cell is SA node
-        if(i <= env.no_cells + env.sa_node_n){
+        if(i <= env.no_cells + env.sa_node_n && env.Pacing == 1){
           // left bound is "no cells". right bound is "no cells + SA node"
           SA[i] = 1; // only first n cells are SA
           CT[i] = -1;
@@ -352,6 +371,14 @@ function initialize(){
           // left bound is "no cells + SA node". right bound is "no cells + SA node + atrium "
           ATR[i] = 1 ;
           CT[i] = -1;
+        }
+
+
+        // if we are pacing, convert SA to ATR
+        if(i <= env.no_cells + env.sa_node_n && env.Pacing == 2) {
+          //  SA[i] = 0;
+          CT[i] = -1;
+          ATR[i] = 1;
         }
 
         // TESTING:
@@ -450,7 +477,7 @@ function initialize(){
     }
 
 
-
+    console.log("[CT, SA, ATR], remember 0=Epi, 1=Endo, 2=Myo ") ;
 
 } ;
 
@@ -459,7 +486,7 @@ function initialize(){
  * march the simulation for one time-step
  *------------------------------------------------------------------------
  */
-function marchTime(){
+function marchTime_MinModel(){
 
     ecg_integral = 0 ;
     ecg_integral1 = 0 ;
@@ -614,6 +641,10 @@ function marchTime(){
     return ;
 }
 
+
+function marchTime_FHNmodel(){
+
+}
 
 /*-------------------------------------------------------------------------
  * Plot one: Cell Voltage Wave
@@ -833,11 +864,9 @@ function display(){
 
       plt1.reset() ;
       plt2.reset() ;
-      plt4.reset()
+      plt4.reset() ;
 
       plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
-
-
   }
 
 
@@ -853,22 +882,7 @@ plt4.reset() ;
 
 plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
 */
-
-  //~~~~~~~~~~~~~~~~~~ plot 1  (tissue voltage)
-  tissue_voltage_curve.plot(x, u) ;
-  // phi_curve.plot(x, phi) ; // uncomment to show phase field
-
-
-  //~~~~~~~~~~~~~~~~~~ plot 2 (rainbow voltage wave)
-
-    // calculate number of actual cells, then split it up into 6 segments
-    // then shift each curve up by i * how much space it gets
-  for(i=0; i < num_lines; i++){
-    line_array[i].draw(env.time, u[(cell_frac * i)+env.no_cells] + (num_lines - i)*alloc_space ) ;
-
-  }
-
-  //~~~~~~~~~~~~~~~~~~ Plot 3  (ECG)
+  //~~~~~~~~~~~~~~~~~~ Plot 1  (ECG)
 /*
   // first sum all laplacian values in time, then plot
   sum_laplacian = 0 ;
@@ -894,17 +908,51 @@ plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
 
   ecg_integral = (ecg_integral2 - ecg_integral1) ;
 
+/* // cut-off the value so it shows on plot
   if(ecg_integral >= env.ECG_y_max){
     ecg_integral = env.ECG_y_max - 0.001;
   } else if (ecg_integral <= -env.ECG_y_max) {
     ecg_integral = -(env.ECG_y_max - 0.001) ;
   }
+*/
+
+// increase bounds of plot1 if the value is too high/low
+  if(ecg_integral >= env.ECG_y_max){
+    console.log('raising', env.ECG_y_max, 'to', ecg_integral + 0.005)
+    env.ECG_y_max = ecg_integral + 0.002;
+  } else if (ecg_integral <= env.ECG_y_min) {
+    console.log('lowering', env.ECG_y_min, 'to', ecg_integral - 0.005)
+    env.ECG_y_min = ecg_integral - 0.002;
+  }
 
   lapl_curve.draw(env.time, ecg_integral) ;
 
-  electrode_1.draw([env.electrode_pos*dx,env.electrode_pos*dx] , [-0.2,2]) ;
-  electrode_2.draw([(num_cells - env.electrode_pos)*dx,(num_cells - env.electrode_pos)*dx], [-0.2,2]) ;
+  if(env.show_elctrde == true){
+    electrode_1.draw([env.electrode_pos*dx,env.electrode_pos*dx] , [-0.2,2]) ;
+    electrode_2.draw([(num_cells - env.electrode_pos)*dx,(num_cells - env.electrode_pos)*dx], [-0.2,2]) ;
+    }
 
+  //~~~~~~~~~~~~~~~~~~ plot 2 (rainbow voltage wave)
+
+    // calculate number of actual cells, then split it up into 6 segments
+    // then shift each curve up by i * how much space it gets
+  for(i=0; i < num_lines; i++){
+    line_array[i].draw(env.time, u[(cell_frac * i)+env.no_cells] + (num_lines - i)*alloc_space ) ;
+  }
+
+
+  //~~~~~~~~~~~~~~~~~~ plot 3  (tissue voltage)
+  // if we are pacing from boundary, force the u[] to be high
+  if(env.Pacing == 2 && (Math.round(env.time) % env.Pace_Freq == 0)){
+    u[env.no_cells+1] = env.Pace_Ampl ;
+  }
+
+  tissue_voltage_curve.plot(x, u) ;
+  // phi_curve.plot(x, phi) ; // uncomment to show phase field
+
+
+
+// plot 4 , gates
   v_curve.draw(env.time, v[env.electrode_pos]) ;
   w_curve.draw(env.time, w[env.electrode_pos]) ;
   s_curve.draw(env.time, s[env.electrode_pos]) ;
@@ -922,7 +970,7 @@ plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
  function run(){
      if(env.running){
          for(var i=0 ; i < env.skip_frames ; i++){
-             marchTime() ;
+             marchTime_MinModel() ;
              env.time += dt ;
              env.pltTime += dt ;
          }
@@ -942,12 +990,15 @@ function create_gui(){
     pnl.add( env, 'atr_node_n').step(1).min(0).max(150) ;
     pnl.add( env, 'epicardial_n').step(1).min(0).max(150) ;
     pnl.add( env, 'endocardial_n').step(1).min(0).max(150) ;
+    pnl.add( env, 'show_elctrde').name("Draw Electrodes?") ;
     pnl.add( env, 'electrode_pos').step(1).max(num_cells/2) ;
     pnl.add( env, 'ECG_y_max').step(0.0001) ;
     pnl.add( env, 'ECG_y_min').step(0.0001) ;
+    pnl.add( env, 'Pacing', {SA_Node : 1, Boundary : 2}).name("Choose Source:") ;
+    pnl.add( env, 'Pace_Freq').step(0.01) ;
+    pnl.add( env, 'Pace_Ampl').step(0.01) ;
     pnl.add( env, 'time').listen();
 } ;
-
 
 console.time("Initialize") ;
 initialize() ;
