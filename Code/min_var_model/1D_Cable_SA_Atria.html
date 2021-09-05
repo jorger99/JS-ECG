@@ -8,7 +8,7 @@
     <body> <center>
       <canvas id="c1" width="512" height="220" style="border:1px solid #000000;">
         Your browser does not support the HTML5 canvas tag.</canvas> <br>
-    	<canvas id="c2" width="512" height="400" style="border:1px solid #000000;">
+    	<canvas id="c2" width="512" height="220" style="border:1px solid #000000;">
     	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
     	<canvas id="c3" width="512" height="220" style="border:1px solid #000000;">
     	  Your browser does not support the HTML5 canvas tag.</canvas> <br>
@@ -243,14 +243,15 @@ env = {
 
     no_cells      : 50 ,  // how many empty spaces we have for cells, in cells
 
-    sa_node_n     : 125 , // first n cells are SA node cells
+    sa_node_n     : 61 , // first n cells are SA node cells
     atr_node_n    : 75 , // n cells after SA are the atrium
 
-    epicardial_n  : 40 ,  // next n are epicardial
-    endocardial_n : 40 ,  // last n are endocardial, myocardial in between
+    epicardial_n  : 66 ,  // next n are epicardial
+    endocardial_n : 11 ,  // last n are endocardial, myocardial in between
 
-    electrode_pos : 35 ,  // cell pos of electrodes from ends of boundaries
-    y_bound : 0.017 ,  // plot1  y bounds
+    electrode_pos : 44 ,  // cell pos of electrodes from ends of boundaries
+    ECG_y_max : 0.017  ,   // plot1  y bounds
+    ECG_y_min : -0.002 ,
 } ;
 
 /*-------------------------------------------------------------------------
@@ -620,14 +621,13 @@ function marchTime(){
  */
 
 var plt_xmax = 1400 ; // used for plots 1,2,4
-var plt_y_bound = 0.007
 
 // initialize plot settings
 var plt1 = new Plot(cnvs1) ;
 plt1.grid = 'on' ;
 
 plt1.xlimits = [0, plt_xmax] ;    		// time axis 		[s]
-plt1.ylimits = [-plt_y_bound, plt_y_bound] ; 		// voltage axis [mV]
+plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
 
 // ticks
 plt1.xticks.precision = 0 ;
@@ -656,7 +656,7 @@ var plt2 = new Plot(cnvs2) ;
 plt2.grid = 'on' ;
 
 plt2.xlimits = [0, plt_xmax] ;   // length axis    [m]
-plt2.ylimits = [0, 5.5] ;
+plt2.ylimits = [0, 3.67] ;
 
 // ticks
 plt2.xticks.precision = 0 ;
@@ -781,7 +781,7 @@ for(i=0; i < num_lines; i++){
   if(cell_num > env.no_cells + env.sa_node_n && cell_num <= env.no_cells + env.sa_node_n + env.atr_node_n)
     { curve.color = "#00FF0050" ; }  // ATR node is green #00FF00
 
-  console.log(CT[cell_num], SA[cell_num], ATR[cell_num])
+  // console.log(CT[cell_num], SA[cell_num], ATR[cell_num])
 
   line_array.push(curve) ;
 
@@ -835,7 +835,7 @@ function display(){
       plt2.reset() ;
       plt4.reset()
 
-      plt1.ylimits = [-env.y_bound, env.y_bound] ; 		// voltage axis [mV]
+      plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
 
 
   }
@@ -851,7 +851,7 @@ plt1.reset() ;
 plt2.reset() ;
 plt4.reset() ;
 
-plt1.ylimits = [-env.y_bound, env.y_bound] ; 		// voltage axis [mV]
+plt1.ylimits = [env.ECG_y_min, env.ECG_y_max] ; 		// voltage axis [mV]
 */
 
   //~~~~~~~~~~~~~~~~~~ plot 1  (tissue voltage)
@@ -894,10 +894,10 @@ plt1.ylimits = [-env.y_bound, env.y_bound] ; 		// voltage axis [mV]
 
   ecg_integral = (ecg_integral2 - ecg_integral1) ;
 
-  if(ecg_integral >= env.y_bound){
-    ecg_integral = env.y_bound - 0.001;
-  } else if (ecg_integral <= -env.y_bound) {
-    ecg_integral = -(env.y_bound - 0.001) ;
+  if(ecg_integral >= env.ECG_y_max){
+    ecg_integral = env.ECG_y_max - 0.001;
+  } else if (ecg_integral <= -env.ECG_y_max) {
+    ecg_integral = -(env.ECG_y_max - 0.001) ;
   }
 
   lapl_curve.draw(env.time, ecg_integral) ;
@@ -935,14 +935,16 @@ function create_gui(){
     var gui = new Abubu.Gui() ;
     var pnl = gui.addPanel() ;
 
-    pnl.add( env, 'initialize') ;
-    pnl.add( env, 'solve').name( 'Solve/Pause' ) ;
+    pnl.add( env, 'initialize').name("Update_Param") ;
+    pnl.add( env, 'solve').name( 'Start/Pause' ) ;
     pnl.add( env, 'skip_frames').step(1).min(1) ;
     pnl.add( env, 'sa_node_n').step(1).min(0).max(150) ;
+    pnl.add( env, 'atr_node_n').step(1).min(0).max(150) ;
     pnl.add( env, 'epicardial_n').step(1).min(0).max(150) ;
     pnl.add( env, 'endocardial_n').step(1).min(0).max(150) ;
     pnl.add( env, 'electrode_pos').step(1).max(num_cells/2) ;
-    pnl.add( env, 'y_bound').step(0.0001) ;
+    pnl.add( env, 'ECG_y_max').step(0.0001) ;
+    pnl.add( env, 'ECG_y_min').step(0.0001) ;
     pnl.add( env, 'time').listen();
 } ;
 
